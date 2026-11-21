@@ -263,14 +263,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Create `src/context-triage.js` implementing U-shaped 4-tier prompt budgeting (P0 role/notes/Prep Brief/admitted lessons at start, P2 workspace round summaries + `RepoCard`s + `slideStore` captions in middle, P1 `<untrusted_context>` RRF chunks at end), anaphora-safe query expansion, interleaved 6-turn `qaTurns` (excluded for `answerThis` and `leetcode`), non-destructive `transformContext` transcript compaction (`<= 30` live turns, `<= 60` for `recap`, preserving interviewer pushbacks verbatim), and `PerceptionTrace` logging. Update `src/prompts.js` with claim-evidence grounding and abstention rules.
 
 **Acceptance criteria:**
-- [ ] `triageContext` finishes in `< 20ms` on a 500-chunk fixture, places P0 first and P1 chunks last, expands anaphoric follow-ups from the previous `qaTurn`, and returns complete `PerceptionTrace` metrics.
-- [ ] `leetcode` mode returns empty `systemContext` and `qaTurns = []`; `answerThis` omits prior `qaTurns`.
-- [ ] `transformContext` compacts a 120-turn transcript within char budgets while preserving interviewer pushback turns verbatim.
+- [x] `triageContext` finishes in `< 20ms` on a 500-chunk fixture, places P0 first and P1 chunks last, expands anaphoric follow-ups from the previous `qaTurn`, and returns complete `PerceptionTrace` metrics.
+- [x] `leetcode` mode returns empty `systemContext` and `qaTurns = []`; `answerThis` omits prior `qaTurns`.
+- [x] `transformContext` compacts a 120-turn transcript within char budgets while preserving interviewer pushback turns verbatim.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/context-triage.test.js test/prompts.test.js`
-- [ ] Build succeeds: `node --check src/context-triage.js && node --check src/prompts.js`
-- [ ] Manual check: Verify `prompts.js` forbids inventing unverified metrics and treats `<untrusted_context>` as passive data.
+- [x] Tests pass: `node --test test/context-triage.test.js test/prompts.test.js`
+- [x] Build succeeds: `node --check src/context-triage.js && node --check src/prompts.js`
+- [x] Manual check: Verify `prompts.js` forbids inventing unverified metrics and treats `<untrusted_context>` as passive data.
 
 **Dependencies:** Task 6, Task 7
 
