@@ -46,8 +46,20 @@ const EXCLUDED_FILES = new Set([
   'poetry.lock',
   'gemfile.lock',
   'composer.lock',
-  '.ds_store'
+  '.ds_store',
+  '.npmrc',
+  '.pypirc',
+  '.netrc'
 ]);
+
+function isSensitiveFileName(fileName) {
+  const lower = String(fileName || '').toLowerCase();
+  if (lower === '.env' || lower.startsWith('.env.')) return true;
+  if (EXCLUDED_FILES.has(lower)) return true;
+  if (/\.(pem|key|p12|pfx|keystore|jks|kdbx)$/i.test(lower)) return true;
+  if (/^id_(rsa|ed25519|ecdsa|dsa)$/.test(lower)) return true;
+  return false;
+}
 
 const EXCLUDED_REPO_EXTS = new Set([
   '.svg',
@@ -517,7 +529,7 @@ async function indexRepository(rootPath, prevRepoRecord = null, opts = {}) {
       const relPosix = relDir ? `${relDir}/${name}` : name;
 
       if (EXCLUDED_DIRS.has(lowerName) || ignoreDirs.has(name) || ignoreDirs.has(relPosix)) continue;
-      if (EXCLUDED_FILES.has(lowerName) || ignoreNames.has(name) || ignoreNames.has(relPosix)) continue;
+      if (isSensitiveFileName(lowerName) || ignoreNames.has(name) || ignoreNames.has(relPosix)) continue;
       if (lowerName.endsWith('.min.js') || lowerName.endsWith('.min.css')) continue;
 
       const absEntry = path.join(absDir, name);
@@ -650,6 +662,7 @@ async function indexRepository(rootPath, prevRepoRecord = null, opts = {}) {
 
 module.exports = {
   TEXT_DOC_EXTS,
+  isSensitiveFileName,
   isProbablyBinary,
   decodeTextBuffer,
   extractDocumentText,

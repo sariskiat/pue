@@ -2,12 +2,16 @@ function sanitizeSourceAttr(raw) {
   return String(raw || 'source').replace(/["<>]/g, '');
 }
 
+function escapeUntrustedBody(raw) {
+  return String(raw || '').replace(/<\/untrusted_context>/gi, '<\\/untrusted_context>');
+}
+
 function wrapUntrustedChunk(chunk) {
   const loc =
     chunk.startLine && chunk.endLine
       ? `${chunk.sourceLabel || 'file'}:${chunk.startLine}-${chunk.endLine}`
       : chunk.sourceLabel || 'file';
-  return `<untrusted_context source="${sanitizeSourceAttr(loc)}">\n${chunk.text || ''}\n</untrusted_context>`;
+  return `<untrusted_context source="${sanitizeSourceAttr(loc)}">\n${escapeUntrustedBody(chunk.text || '')}\n</untrusted_context>`;
 }
 
 function collectPriorRoundFocus(workspace) {

@@ -63,10 +63,13 @@ function transformContext({ mode = 'say', transcript = [], rollingSummary = '' }
   }
 
   let compactionCandidate = null;
-  if (transcript.length > 40 && tail.length > 0 && tail[0].id) {
+  if (overflow.length > 0 && tail.length > 0 && tail[0].id) {
+    const pushbackSummary = preservedPushbacks.length
+      ? ` Key pushbacks: ${preservedPushbacks.map((t) => clip(t.text, 180)).join(' | ')}`
+      : '';
     compactionCandidate = {
       firstKeptEntryId: tail[0].id,
-      summary: summaryParts.join(' ').trim()
+      summary: (summaryParts.join(' ') + pushbackSummary).trim()
     };
   }
 
@@ -203,14 +206,21 @@ function triageContext({
     const cards = prof.repos
       .slice(0, 8)
       .map((r) => (r.card && r.card.summary ? r.card.summary : `${r.name}: ${r.rootPath || ''}`));
-    p2Blocks.push(clip(`Attached Repository Directory:\n${cards.join('\n---\n')}`, 1500));
+    p2Blocks.push(
+      wrapUntrustedChunk({
+        sourceLabel: 'repo_directory',
+        text: clip(cards.join('\n---\n'), 1400)
+      })
+    );
   }
   if (def.needsScreen && Array.isArray(slides) && slides.length) {
     const slideText = slides
       .slice(-4)
       .map((s, idx) => `Slide ${s.index || idx + 1}: ${s.caption || ''}`)
       .join('\n');
-    if (slideText.trim()) p2Blocks.push(clip(`Recent Screen Slides:\n${slideText}`, 800));
+    if (slideText.trim()) {
+      p2Blocks.push(wrapUntrustedChunk({ sourceLabel: 'screen_slides', text: clip(slideText, 750) }));
+    }
   }
 
   // P1 Retrieved Evidence (High-Attention End)

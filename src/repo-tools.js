@@ -1,6 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
-const { isProbablyBinary, decodeTextBuffer } = require('./repo-indexer');
+const { isProbablyBinary, isSensitiveFileName, decodeTextBuffer } = require('./repo-indexer');
 
 const MAX_LIST_ENTRIES = 60;
 const MAX_GREP_MATCHES = 25;
@@ -74,7 +74,19 @@ function sanitizeAttr(raw) {
 }
 
 function wrapToolContent(source, body) {
-  return `<untrusted_context source="${sanitizeAttr(source)}">\n${body}\n</untrusted_context>`;
+  const safeBody = String(body || '').replace(/<\/untrusted_context>/gi, '<\\/untrusted_context>');
+  return `<untrusted_context source="${sanitizeAttr(source)}">\n${safeBody}\n</untrusted_context>`;
+}
+
+function hasForbiddenPathSegment(relOrSubpath) {
+  const parts = String(relOrSubpath || '')
+    .split(/[\\/]/)
+    .filter(Boolean);
+  for (const seg of parts) {
+    if (SKIP_DIRS.has(seg.toLowerCase())) return true;
+  }
+  if (parts.length > 0 && isSensitiveFileName(parts[parts.length - 1])) return true;
+  return false;
 }
 
 // Canonicalize the nearest existing ancestor so missing leaf files cannot bypass symlink checks.
@@ -172,7 +184,7 @@ function createScopedToolbox(allowedRoots) {
       }
       for (const d of items) {
         if (collected.length >= cap) break;
-        if (SKIP_DIRS.has(d.name.toLowerCase())) continue;
+        if (SKIP_DIRS.has(d.name.toLowerCase()) || isSensitiveFileName(d.name)) continue;
         const absChild = path.join(absDir, d.name);
         let realChild;
         try {
@@ -275,9 +287,20 @@ function createScopedToolbox(allowedRoots) {
     const target = resolveScopedPath(path.join(rootEntry.path, relPath), rootPathsOnly);
     // Double-check target stays inside the requested rootEntry as well
     resolveScopedPath(target, [rootEntry.path]);
+    const normRelCheck = path.relative(rootEntry.path, target).split(path.sep).join('/');
+    if (hasForbiddenPathSegment(normRelCheck)) {
+      throw new Error(`Access denied to excluded or sensitive file: ${rootEntry.name}/${normRelCheck}`);
+    }
 
     if (!fs.existsSync(target)) {
       throw new Error(`File not found: ${rootEntry.name}/${relPath}`);
+    }
+    const stat = await fs.promises.stat(target);
+    if (!stat.isFile()) {
+      throw new Error(`Not a regular file: ${rootEntry.name}/${relPath}`);
+    }
+    if (stat.size > MAX_GREP_FILE_BYTES) {
+      throw new Error(`File exceeds 256 KB read limit: ${rootEntry.name}/${relPath}`);
     }
     const buf = await fs.promises.readFile(target);
     if (isProbablyBinary(buf)) {

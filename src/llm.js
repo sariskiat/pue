@@ -808,28 +808,31 @@ async function streamOpenAiToolLoop(provider, args, minimaxRegion) {
   const { client, isAzure } = buildOpenAiClient(provider, args, minimaxRegion);
   const openAiTools = toOpenAiTools(tools);
 
-  const initialMessages = [{ role: 'system', content: system }];
-  turns.forEach((t, i) => {
-    const last = i === turns.length - 1;
-    if (last && imageDataUrl && t.role === 'user') {
-      initialMessages.push({
-        role: 'user',
-        content: [
-          { type: 'text', text: t.text },
-          { type: 'image_url', image_url: { url: imageDataUrl } }
-        ]
-      });
-    } else {
-      initialMessages.push({ role: t.role, content: t.text });
-    }
-  });
+  const buildInitialOpenAiMessages = (withImage) => {
+    const msgs = [{ role: 'system', content: system }];
+    turns.forEach((t, i) => {
+      const last = i === turns.length - 1;
+      if (last && withImage && imageDataUrl && t.role === 'user') {
+        msgs.push({
+          role: 'user',
+          content: [
+            { type: 'text', text: t.text },
+            { type: 'image_url', image_url: { url: imageDataUrl } }
+          ]
+        });
+      } else {
+        msgs.push({ role: t.role, content: t.text });
+      }
+    });
+    return msgs;
+  };
 
   // Track assistant + tool turns dynamically so Level-1 clearing can compact older tool outputs.
   const roundRecords = [];
 
   for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
     const allowTools = roundIdx < maxToolRounds;
-    const messages = initialMessages.slice();
+    const messages = buildInitialOpenAiMessages(roundIdx === 0);
     for (const rec of roundRecords) {
       messages.push(rec.assistantMessage);
       for (const tr of rec.toolRecords) {
@@ -855,7 +858,13 @@ async function streamOpenAiToolLoop(provider, args, minimaxRegion) {
       ...(allowTools ? { tools: openAiTools } : {})
     };
 
-    const stream = await client.chat.completions.create(reqBody, requestOptions(signal));
+    let stream;
+    try {
+      stream = await client.chat.completions.create(reqBody, requestOptions(signal));
+    } catch (err) {
+      if (err && typeof err === 'object') err.toolRound = roundIdx;
+      throw err;
+    }
     const answer = answerText(onToken);
     const toolCallMap = new Map();
     let finish = '';
@@ -980,23 +989,24 @@ async function streamAnthropicToolLoop(args) {
     input_schema: t.parameters
   }));
 
-  const initialMessages = turns.map((t, i) => {
-    const last = i === turns.length - 1;
-    if (last && imageDataUrl && t.role === 'user') {
-      const img = stripDataUrl(imageDataUrl);
-      const content = [];
-      if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.b64 } });
-      content.push({ type: 'text', text: t.text });
-      return { role: 'user', content };
-    }
-    return { role: t.role, content: t.text };
-  });
+  const buildInitialAnthropicMessages = (withImage) =>
+    turns.map((t, i) => {
+      const last = i === turns.length - 1;
+      if (last && withImage && imageDataUrl && t.role === 'user') {
+        const img = stripDataUrl(imageDataUrl);
+        const content = [];
+        if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.b64 } });
+        content.push({ type: 'text', text: t.text });
+        return { role: 'user', content };
+      }
+      return { role: t.role, content: t.text };
+    });
 
   const roundRecords = [];
 
   for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
     const allowTools = roundIdx < maxToolRounds;
-    const messages = initialMessages.slice();
+    const messages = buildInitialAnthropicMessages(roundIdx === 0);
     for (const rec of roundRecords) {
       messages.push(rec.assistantMessage);
       messages.push({
@@ -1021,7 +1031,13 @@ async function streamAnthropicToolLoop(args) {
       ...(allowTools ? { tools: anthropicTools } : {})
     };
 
-    const stream = await client.messages.create(reqBody, requestOptions(signal));
+    let stream;
+    try {
+      stream = await client.messages.create(reqBody, requestOptions(signal));
+    } catch (err) {
+      if (err && typeof err === 'object') err.toolRound = roundIdx;
+      throw err;
+    }
     const answer = answerText(onToken);
     const toolBlocks = new Map();
     let stop = '';
@@ -1062,11 +1078,13 @@ async function streamAnthropicToolLoop(args) {
 
       for (const tc of toolCalls) {
         let parsedInput = tc.initialInput && Object.keys(tc.initialInput).length ? tc.initialInput : {};
+        let invalidJson = false;
         if (!isTruncated && tc.jsonText.trim()) {
           try {
             parsedInput = JSON.parse(tc.jsonText);
           } catch (_) {
             parsedInput = {};
+            invalidJson = true;
           }
         }
         assistantContent.push({ type: 'tool_use', id: tc.id, name: tc.name, input: parsedInput });
@@ -1078,6 +1096,16 @@ async function streamAnthropicToolLoop(args) {
             name: tc.name,
             summary: `${tc.name} (truncated)`,
             rawContent: '[Tool call truncated because output hit max_tokens; request a smaller slice.]'
+          });
+          continue;
+        }
+        if (invalidJson) {
+          toolRecords.push({
+            roundIndex: roundIdx,
+            callId: tc.id,
+            name: tc.name,
+            summary: `${tc.name} (invalid JSON)`,
+            rawContent: '[Invalid JSON arguments in tool call; retry with valid JSON.]'
           });
           continue;
         }
@@ -1128,21 +1156,22 @@ async function streamGeminiToolLoop(args) {
   const { GoogleGenAI } = require('@google/genai');
   const ai = new GoogleGenAI({ apiKey });
 
-  const initialContents = turns.map((t, i) => {
-    const last = i === turns.length - 1;
-    const parts = [{ text: t.text }];
-    if (last && imageDataUrl && t.role === 'user') {
-      const img = stripDataUrl(imageDataUrl);
-      if (img) parts.push({ inlineData: { mimeType: img.mime, data: img.b64 } });
-    }
-    return { role: t.role === 'assistant' ? 'model' : 'user', parts };
-  });
+  const buildInitialGeminiContents = (withImage) =>
+    turns.map((t, i) => {
+      const last = i === turns.length - 1;
+      const parts = [{ text: t.text }];
+      if (last && withImage && imageDataUrl && t.role === 'user') {
+        const img = stripDataUrl(imageDataUrl);
+        if (img) parts.push({ inlineData: { mimeType: img.mime, data: img.b64 } });
+      }
+      return { role: t.role === 'assistant' ? 'model' : 'user', parts };
+    });
 
   const roundRecords = [];
 
   for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
     const allowTools = roundIdx < maxToolRounds;
-    const contents = initialContents.slice();
+    const contents = buildInitialGeminiContents(roundIdx === 0);
     for (const rec of roundRecords) {
       contents.push(rec.modelTurn);
       contents.push({
@@ -1177,9 +1206,17 @@ async function streamGeminiToolLoop(args) {
     try {
       stream = await ai.models.generateContentStream({ model, contents, config });
     } catch (e) {
-      if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) throw e;
+      if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) {
+        if (e && typeof e === 'object') e.toolRound = roundIdx;
+        throw e;
+      }
       delete config.thinkingConfig;
-      stream = await ai.models.generateContentStream({ model, contents, config });
+      try {
+        stream = await ai.models.generateContentStream({ model, contents, config });
+      } catch (e2) {
+        if (e2 && typeof e2 === 'object') e2.toolRound = roundIdx;
+        throw e2;
+      }
     }
 
     const answer = answerText(onToken);
@@ -1363,7 +1400,8 @@ function createLLM(settings) {
       try {
         return await streamWithTools(provider, trackedArgs, minimaxRegion);
       } catch (error) {
-        if (!emittedTokens && !combinedSignal.aborted && shouldFallbackFromTools(error)) {
+        const failedAtRound0 = error && (error.toolRound === 0 || error.toolRound === undefined);
+        if (failedAtRound0 && !emittedTokens && !combinedSignal.aborted && shouldFallbackFromTools(error)) {
           try {
             return await streamWith(
               provider,

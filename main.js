@@ -910,55 +910,36 @@ async function runFeature(mode, userText) {
         : '';
     const fullProfile = getProfileStore().getProfile();
 
-    const hasWorkspaceOrProfileData =
-      (activeWs && ((activeWs.files && activeWs.files.length > 0) || (activeWs.notes && activeWs.notes.trim()) || (activeWs.prepBrief && activeWs.prepBrief.summary))) ||
-      (fullProfile.documents && fullProfile.documents.length > 0) ||
-      (fullProfile.repos && fullProfile.repos.length > 0) ||
-      Boolean(wsMemory);
-
-    let system;
-    let turnsForStream;
+    const triaged = triageContext({
+      mode,
+      transcript: roundProj.transcript && roundProj.transcript.length ? roundProj.transcript : transcript,
+      rollingSummary: roundProj.rollingSummary || '',
+      userText: userText || '',
+      workspace: activeWs,
+      workspaceMemory: wsMemory,
+      profile: fullProfile,
+      qaTurns: roundProj.qaTurns || [],
+      slides: slideStore.list(),
+      aiRules: settingsForPrompt.aiRules || ''
+    });
+    const system = triaged.systemPrompt;
+    const turnsForStream = triaged.conversationTurns;
     let fallbackSystem = null;
     let fallbackTurns = null;
-    let triaged = null;
 
-    if (hasWorkspaceOrProfileData || (roundProj.qaTurns && roundProj.qaTurns.length > 0) || mode === 'recap') {
-      triaged = triageContext({
-        mode,
-        transcript: roundProj.transcript && roundProj.transcript.length ? roundProj.transcript : transcript,
-        rollingSummary: roundProj.rollingSummary || '',
-        userText: userText || '',
-        workspace: activeWs,
-        workspaceMemory: wsMemory,
-        profile: fullProfile,
-        qaTurns: roundProj.qaTurns || [],
-        slides: slideStore.list(),
-        aiRules: settingsForPrompt.aiRules || ''
-      });
-      system = triaged.systemPrompt;
-      turnsForStream = triaged.conversationTurns;
-
-      if (activeWs && activeRoundId) {
-        try {
+    if (activeWs && activeRoundId && mode !== 'leetcode') {
+      try {
+        getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+          type: 'perception_trace',
+          ...triaged.perceptionTrace
+        });
+        if (triaged.compactionCandidate) {
           getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
-            type: 'perception_trace',
-            ...triaged.perceptionTrace
+            type: 'compaction',
+            ...triaged.compactionCandidate
           });
-          if (triaged.compactionCandidate) {
-            getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
-              type: 'compaction',
-              ...triaged.compactionCandidate
-            });
-          }
-        } catch (_) {}
-      }
-    } else {
-      let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
-      const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
-      if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
-      system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
-      const built = def.build({ transcript, userText: userText || '' });
-      turnsForStream = [{ role: 'user', text: built }];
+        }
+      } catch (_) {}
     }
 
     const allowedRootEntries = [
@@ -1033,10 +1014,31 @@ async function runFeature(mode, userText) {
                   rearm();
                   const detail = (info.args && (info.args.relPath || info.args.query || info.args.rootName)) || info.name;
                   send('llm:tool', { name: info.name, detail: String(detail), round: info.round });
+                  if (activeWs && activeRoundId) {
+                    try {
+                      getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+                        type: 'tool_call',
+                        toolName: info.name,
+                        args: info.args || {}
+                      });
+                    } catch (_) {}
+                  }
                 },
                 executeTool: async (name, toolArgs) => {
+                  const t0 = Date.now();
                   const res = await toolbox.executeTool(name, toolArgs);
                   if (res && res.sourceHandle) citedSources.add(res.sourceHandle);
+                  if (activeWs && activeRoundId) {
+                    try {
+                      getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+                        type: 'tool_result',
+                        toolName: name,
+                        summary: (res && res.summary) || name,
+                        durationMs: Date.now() - t0,
+                        isError: !!(res && res.isError)
+                      });
+                    } catch (_) {}
+                  }
                   return res;
                 }
               }
@@ -1241,7 +1243,14 @@ function stopWindowDrag() {
   clearInterval(windowDrag);
   windowDrag = null;
 }
-ipcMain.on('open-pane', (_e, url) => { shell.openExternal(url).catch(() => {}); });
+function isAllowedSystemSettingsUrl(url) {
+  if (typeof url !== 'string') return false;
+  return /^(x-apple\.systempreferences:|ms-settings:)[A-Za-z0-9._:?&=-]+$/i.test(url.trim());
+}
+ipcMain.on('open-pane', (_e, url) => {
+  if (!isAllowedSystemSettingsUrl(url)) return;
+  shell.openExternal(url.trim()).catch(() => {});
+});
 ipcMain.on('app:quit', () => app.quit());
 ipcMain.on('log', (_e, msg) => console.log('[renderer]', msg));
 // -------- resume / job-description file import --------
@@ -1337,6 +1346,7 @@ ipcMain.handle('workspace:create', (_e, payload) => {
   syncTranscriptToActiveRound();
   const snap = currentWorkspaceSnapshot();
   send('workspace:changed', snap);
+  send('transcript:restore', { turns: transcript.slice() });
   return snap;
 });
 ipcMain.handle('workspace:update', (_e, { id, patch } = {}) => {
@@ -1358,6 +1368,7 @@ ipcMain.handle('workspace:delete', (_e, id) => {
   syncTranscriptToActiveRound();
   const snap = currentWorkspaceSnapshot();
   send('workspace:changed', snap);
+  send('transcript:restore', { turns: transcript.slice() });
   return snap;
 });
 ipcMain.handle('workspace:attach-file', async (_e, { wsId, role = 'jd', pickFolder = false } = {}) => {
@@ -1390,6 +1401,7 @@ ipcMain.handle('workspace:create-round', (_e, { wsId, name } = {}) => {
   syncTranscriptToActiveRound();
   const snap = currentWorkspaceSnapshot();
   send('workspace:changed', snap);
+  send('transcript:restore', { turns: transcript.slice() });
   return snap;
 });
 ipcMain.handle('workspace:select-round', (_e, { wsId, roundId } = {}) => {
@@ -1620,12 +1632,7 @@ function launchApp() {
     onRetry: (r) => recordEvent({ level: 'info', event: 'llm_filter_retry', msg: `${r.from} -> ${r.to}`, frame: 'meetingNotes', context: { mode: 'notes', from: r.from, to: r.to, finishReason: r.finishReason } })
   });
   syncTranscriptToActiveRound();
-  if (!transcript.length) {
-    restoredTurns = meetingMemory.resumeOpen();
-    if (restoredTurns.length) transcript.push(...restoredTurns.slice(-MAX_TRANSCRIPT_TURNS));
-  } else {
-    restoredTurns = transcript.slice();
-  }
+  restoredTurns = transcript.slice();
   meetingMemory.catchUp().then((n) => { if (n) console.log(`[meetings] wrote notes for ${n} earlier meeting(s)`); }).catch(() => {});
   getWorkspaceStore()
     .catchUpPendingRounds({

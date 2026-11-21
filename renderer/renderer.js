@@ -1310,6 +1310,10 @@
   // Transcript of a meeting resumed at launch: sidebar rows only — no
   // auto-fill of the input box, which is for live speech.
   cue.on('transcript:restore', ({ turns }) => {
+    const tsListEl = document.getElementById('ts-list');
+    if (tsListEl) {
+      tsListEl.innerHTML = '<div class="ts-placeholder">Conversation history will appear here when listening.</div>';
+    }
     for (const t of turns || []) {
       if (!t || !t.text || t.text.trim().length < 2) continue;
       appendTranscriptHistoryTurn(t.channel, t.text, false);
