@@ -307,7 +307,7 @@ function saveWindowPosition() {
 
 function createWindow() {
   const { workArea } = screen.getPrimaryDisplay();
-  const W = SIDE_W + MAIN_W + SIDE_W, H = 600;
+  const W = SIDE_W + MAIN_W + SIDE_W, H = Math.min(680, Math.max(580, workArea.height - 24));
 
   const savedSettings = store.getSettings();
   let startX = Math.round(workArea.x + (workArea.width - MAIN_W) / 2);

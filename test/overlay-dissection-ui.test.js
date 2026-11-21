@@ -176,7 +176,8 @@ test('Dissection & Failure Journal drawer renders XSS safely, wires lesson decis
 
   const lessonRow = els['#journal-lessons-list'].children[0];
   assert.ok(lessonRow);
-  const buttons = lessonRow.children.filter((c) => c.tagName === 'BUTTON');
+  const actionsWrap = lessonRow.children.find((c) => c.className === 'journal-actions') || lessonRow;
+  const buttons = actionsWrap.children.filter((c) => c.tagName === 'BUTTON');
   assert.equal(buttons.length, 3);
   await buttons[0].listeners.click();
   await buttons[1].listeners.click();

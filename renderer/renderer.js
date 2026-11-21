@@ -2300,7 +2300,10 @@
           renderDissectionBody(dissection, res && res.journal);
         });
 
-        card.append(txt, acceptBtn, promoteBtn, dismissBtn);
+        const actionRow = document.createElement('div');
+        actionRow.className = 'journal-actions';
+        actionRow.append(acceptBtn, promoteBtn, dismissBtn);
+        card.append(txt, actionRow);
         journalHost.appendChild(card);
       }
     }
