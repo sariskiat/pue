@@ -102,13 +102,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Create `src/repo-indexer.js` with `extractDocumentText` (supporting `.pdf`, `.docx`, `.md`, `.txt`, `.json`, `.yaml`, UTF-16 BOM, and zero-char scanned PDF warnings), `chunkText` outputting the unified `Chunk` schema (`~900` chars max, `~150` chars overlap, normalized `terms`), and `scoreChunks` combining BM25 lexical rank and exact code-symbol match rank via Reciprocal Rank Fusion (`1 / (60 + rank)`) with `maxPerSource = 2`.
 
 **Acceptance criteria:**
-- [ ] `.pdf`, `.docx`, `.md`, `.txt`, and UTF-16 BOM files extract into unified `Chunk[]` records; a zero-text PDF returns `warning` metadata instead of throwing.
-- [ ] `scoreChunks` ranks both prose keyword matches and exact camelCase/snake_case symbol matches via RRF (`k = 60`) and caps results at `2` chunks per `(sourceId, relPath)`.
+- [x] `.pdf`, `.docx`, `.md`, `.txt`, and UTF-16 BOM files extract into unified `Chunk[]` records; a zero-text PDF returns `warning` metadata instead of throwing.
+- [x] `scoreChunks` ranks both prose keyword matches and exact camelCase/snake_case symbol matches via RRF (`k = 60`) and caps results at `2` chunks per `(sourceId, relPath)`.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/repo-indexer-chunks.test.js`
-- [ ] Build succeeds: `node --check src/repo-indexer.js`
-- [ ] Manual check: Inspect chunk provenance fields (`sourceId`, `sourceLabel`, `startLine`, `endLine`) in test output.
+- [x] Tests pass: `node --test test/repo-indexer-chunks.test.js`
+- [x] Build succeeds: `node --check src/repo-indexer.js`
+- [x] Manual check: Inspect chunk provenance fields (`sourceId`, `sourceLabel`, `startLine`, `endLine`) in test output.
 
 **Dependencies:** Task 3
 
