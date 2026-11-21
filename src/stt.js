@@ -3,7 +3,6 @@
 // fall back across providers. Returns { text, provider } or { text:'', error }.
 const { pcmToWav } = require('./wav');
 const { formatProviderErrorMessage, isQuotaError, isRateLimitError, isNotFoundError, resolveGeminiModel, CURRENT_GEMINI_DEFAULT, GEMINI_TRANSCRIBE_MODEL } = require('./llm');
-const { PUBLIK_PROVIDER, DEFAULT_BASE_URL: PUBLIK_DEFAULT_BASE_URL } = require('./publik-ui');
 
 const BASE_VOCAB = 'CI/CD, Docker, Kubernetes, Terraform, Jenkins, AWS, Azure, GCP, ' +
   'CodeCommit, CodePipeline, CodeBuild, CodeDeploy, DevOps, SRE, microservices, deployment, ' +
@@ -104,18 +103,6 @@ async function transcribeGemini(apiKey, wav) {
   return transcribeGeminiWith(new GoogleGenAI({ apiKey }), wav);
 }
 
-// whisper-1 answers in verbose_json with the clip's real duration, so the
-// gateway meters the exact length. (A gpt-*-transcribe model reports usage
-// by tokens; without a duration the gateway falls back to a size estimate
-// that is about ten times a 16 kHz WAV clip.)
-const PUBLIK_STT_MODEL = 'whisper-1';
-// publik transcription requests: an answer within 30 s (a 14 s piece takes
-// about 3 s; the SDK default is 10 minutes, and a hung request blocks the
-// channel), and no SDK retries: main.js tries a failed piece once more
-// itself, after a pause that keeps the channel's 2.5 s spacing and the key's
-// 60 requests a minute.
-const PUBLIK_STT_CLIENT = { timeout: 30000, maxRetries: 0 };
-
 // Retry-After (seconds) or retry-after-ms of a failed request, in ms; 0 if none.
 function retryAfterHeaderMs(e) {
   const h = e && e.headers;
@@ -175,33 +162,12 @@ function continuedText(text, context) {
   return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
-/** { apiKey, baseURL, model } when publik can transcribe for this person, else null. */
-function publikTranscription(settings) {
-  const s = settings || {};
-  const keys = s.apiKeys || {};
-  const p = s.publik || {};
-  if (s.provider !== PUBLIK_PROVIDER || !keys.publik || p.revoked) return null;
-  const base = String(p.baseUrl || PUBLIK_DEFAULT_BASE_URL).replace(/\/+$/, '');
-  return { apiKey: keys.publik, baseURL: base, model: PUBLIK_STT_MODEL };
-}
-
-// With publik as the provider, "Auto" transcription means publik API. An own
-// audio key (OpenAI, Groq, Gemini, Deepgram) is used only when the person
-// picked that provider on the Audio tab. Before 0.2.9 Auto tried an old own
-// OpenAI key first: a 0.2.4 user who switched to publik saw "Incorrect API
-// key" and got a split transcript (smoke test 2026-11-02, v0.2.8).
-function publikOwnsAutoAudio(settings) {
-  const s = settings || {};
-  return s.provider === PUBLIK_PROVIDER && (s.sttProvider || 'auto') === 'auto';
-}
-
 function createSTT(settings) {
   const keys = settings.apiKeys || {};
   const selectedProvider = settings.sttProvider || 'auto';
   const vocabPrompt = buildVocabPrompt(settings);
   const chain = [];
-  // 'auto' for the own-key providers below; off while publik owns Auto.
-  const ownAuto = selectedProvider === 'auto' && !publikOwnsAutoAudio(settings);
+  const ownAuto = selectedProvider === 'auto';
   // Each entry carries the model id it actually sends, so a failure can name
   // that id back to the user instead of a hardcoded one they never picked.
   if ((ownAuto || selectedProvider === 'openai') && keys.openai) {
@@ -229,19 +195,6 @@ function createSTT(settings) {
     chain.push({ p: 'custom', fn: (wav) => transcribeOpenAI(keys.custom, wav, settings.sttModel, settings.baseUrl, vocabPrompt) });
   }
   if (keys.openai && chain.length > 1) chain.unshift(chain.splice(chain.findIndex((c) => c.p === 'openai'), 1)[0]);
-  // publik API: the transcription path for a person who runs cue on publik
-  // (smoke test 2026-11-02: such a Mac user got "No transcription key set"
-  // and no transcript). In 'auto' it is the only entry (publikOwnsAutoAudio);
-  // only while publik is the selected provider and its key is live, so a
-  // person who moved to another provider is never charged on publik for audio.
-  const publikStt = publikTranscription(settings);
-  if (selectedProvider === 'auto' && publikStt) {
-    chain.push({ p: 'publik', m: publikStt.model, fn: async (wav, opts) => {
-      const context = opts && opts.context;
-      const text = await transcribeOpenAI(publikStt.apiKey, wav, publikStt.model, publikStt.baseURL, promptWithContext(vocabPrompt, context), PUBLIK_STT_CLIENT);
-      return context ? continuedText(text, context) : text;
-    } });
-  }
 
   let disabledUntil = 0;
   let lastProvider = null;
@@ -250,8 +203,6 @@ function createSTT(settings) {
     available: chain.length > 0,
     providers: chain.map((c) => c.p),
     models: chain.map((c) => c.m),
-    // opts.context: the text just before this piece when it starts at a cut
-    // (publik only; see promptWithContext).
     async transcribe(pcm, opts = {}) {
       if (!chain.length || !pcm || pcm.length < 3200) return { text: '' };
       const now = Date.now();
@@ -274,8 +225,6 @@ function createSTT(settings) {
           // the old status===429 catch-all inside isQuotaError; now that a
           // rate limit is classified separately, it has to be named here too).
           const backOff = isQuotaError(e) || isRateLimitError(e);
-          // publik failures come back as an Error with one action (Reconnect,
-          // or a publikhq.com link); every other provider as a string.
           const formatted = formatProviderErrorMessage(e, c.p, c.m);
           const message = formatted instanceof Error ? formatted.message : formatted;
           lastErr = { status: e && e.status, code: e && e.code, message, provider: c.p, model: c.m };
@@ -294,4 +243,4 @@ function createSTT(settings) {
   };
 }
 
-module.exports = { createSTT, publikTranscription, publikOwnsAutoAudio, PUBLIK_STT_MODEL, PUBLIK_STT_CLIENT, retryAfterHeaderMs, promptWithContext, continuedText, CONTEXT_CHARS, looksLikeHallucination, buildVocabPrompt, transcribeGemini, transcribeGeminiWith, extractGeminiTranscript };
+module.exports = { createSTT, retryAfterHeaderMs, promptWithContext, continuedText, CONTEXT_CHARS, looksLikeHallucination, buildVocabPrompt, transcribeGemini, transcribeGeminiWith, extractGeminiTranscript };

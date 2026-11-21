@@ -2,10 +2,8 @@
 // stream({ system, turns:[{role,text}], imageDataUrl, maxTokens, onToken }) -> Promise<fullText>
 
 const { createCompatibleClientOptions } = require('./openai-compatible');
-const publik = require('./publik-ui');
 
 const CUSTOM_PROVIDER = 'custom';
-const PUBLIK_PROVIDER = publik.PUBLIK_PROVIDER;
 // gemini-2.0-flash was Google's default here until it was deprecated (Feb 2026)
 // and fully retired (Mar 3 2026) — every request against it now 404s with a
 // generic "exception parsing response" body. gemini-3.8-flash is the current
@@ -40,8 +38,7 @@ const DEFAULT_MODELS = {
   // replacement aliases are deepseek-flash (non-thinking) and deepseek-v4-pro
   // (thinking), so those are the defaults used everywhere in this file.
   deepseek: 'deepseek-flash',
-  azure: 'gpt-4o-mini',
-  publik: publik.DEFAULT_MODELS.fast
+  azure: 'gpt-4o-mini'
 };
 const CEREBRAS_BASE_URL = 'https://api.cerebras.ai/v1';
 
@@ -80,7 +77,7 @@ const DEAD_DEEPSEEK_MODEL_RE = /^deepseek-(chat|reasoner)$/i;
 const CURRENT_DEEPSEEK_FAST_DEFAULT = 'deepseek-flash';
 const CURRENT_DEEPSEEK_SMART_DEFAULT = 'deepseek-v4-pro';
 
-const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', publik: publik.PROVIDER_LABEL, deepseek: 'DeepSeek' };
+const PROVIDER_LABELS = { azure: 'Azure AI Foundry', cerebras: 'Cerebras', openai: 'OpenAI', minimax: 'MiniMax', deepseek: 'DeepSeek' };
 
 // DeepSeek is OpenAI-compatible and reuses the OpenAI screenshot/streaming path via baseURL.
 const DEEPSEEK_BASE_URL = 'https://api.deepseek.com';
@@ -174,50 +171,14 @@ function formatRetryWait(seconds) {
   return `${minutes} minute${minutes === 1 ? '' : 's'}`;
 }
 
-// Structured errors for publik so main.js can offer a button, not just a sentence.
-function publikError(message, action) {
-  const e = new Error(message);
-  e.action = action || null;
-  return e;
-}
-
-function isConnectionError(error) {
-  const name = error && error.name;
-  const text = (error && (error.message || String(error))) || '';
-  return name === 'APIConnectionError' || name === 'APIConnectionTimeoutError' ||
-    /fetch failed|ECONNREFUSED|ENOTFOUND|ETIMEDOUT|ECONNRESET|network|connection error|aborted/i.test(text);
-}
-
-// publik gateway failures, mapped BEFORE isQuotaError: its regex matches
-// "billing"/"quota" in message text and the generic 429 copy tells the user to
-// "add billing to your publik API account", which is wrong for publik. Reads
-// the openai SDK's APIError shape (status, error = the envelope's inner
-// object, headers) and falls through (null) for anything not publik-specific.
-function describePublikError(error, model) {
-  const status = error && (error.status || error.statusCode || error.response?.status);
-  const body = error && (error.error || error.response?.data?.error || null);
-  const headers = error && error.headers;
-  const retryAfter = headers ? (typeof headers.get === 'function' ? headers.get('retry-after') : (headers['retry-after'] || headers['Retry-After'])) : null;
-  if (!status && !isConnectionError(error)) return null;
-  const described = publik.describeGatewayError({ status, body, model, retryAfter });
-  return described ? publikError(described.message, described.action) : null;
-}
-
 function formatProviderErrorMessage(error, provider, model) {
   // An empty or cut answer already carries its plain sentence (settleAnswer).
   if (error && error.emptyAnswer) return error;
   const label = normalizeProviderName(provider);
   const rawMessage = (error && (error.message || String(error))) || '';
 
-  if (provider === PUBLIK_PROVIDER) {
-    const described = describePublikError(error, model);
-    if (described) return described;
-  }
-
-  // A bad own key: one plain sentence, never the provider's raw 401 (which
-  // also echoes part of the key). main.js adds "Switch to publik" and
-  // "Fix my key" (src/publik.js ownKeyFailedMessage).
-  if (provider !== PUBLIK_PROVIDER && isAuthError(error)) {
+  // Never echo the provider's raw 401 body because some APIs include partial key text.
+  if (isAuthError(error)) {
     const failed = new Error(`Your ${label} key did not work.`);
     failed.ownKeyFailed = { provider, providerName: label };
     return failed;
@@ -296,7 +257,7 @@ const RECITATION_STOPS = new Set(['recitation', 'image_recitation']);
 const NO_REASON = new Set(['', 'finish_reason_unspecified']);
 
 // evidence.cutShort: the stream itself shows that it did not reach its end
-// (cue cancelled it; on publik, it closed before "data: [DONE]"; on
+// (cancelled by watchdog, closed before "data: [DONE]", or no message_stop).
 // Anthropic, no message_stop). A stream with no stop reason is incomplete
 // only with such evidence: own-key servers that send no reason at all
 // otherwise got "(Incomplete: ...)" on every answer.
@@ -323,13 +284,10 @@ function emptyAnswerError(kind, finishReason) {
   return error;
 }
 
-// Refusal messages that a host streams as if they were the answer.
-// publik-balanced (xiaomi/mimo-v2.6-pro, OpenRouter its only host) sometimes
-// sends the first one as normal content, alone or glued to a partial answer
-// mid-word ("...streaming of the ascendingThe request was rejected
-// because..."), and then finish_reason "content_filter" (NitroAI smoke,
-// 2026-11-05). Only provider messages are listed (the same list as NitroAI's
-// src/lib/engine/refusal.ts), never "I can't help with that" phrases, which
+// Refusal messages that an upstream host streams as if they were the answer.
+// OpenRouter-hosted models sometimes send the first one as normal content,
+// alone or glued to a partial answer mid-word ("...streaming of the ascendingThe request was rejected
+// because..."), and then finish_reason "content_filter". Only provider messages are listed, never "I can't help with that" phrases, which
 // can be real content.
 //   exact: the message word for word, case and spacing as the provider sends it.
 //   start: the first words of it; every wording of that message starts so.
@@ -348,15 +306,14 @@ function emptyAnswerError(kind, finishReason) {
 //   with its own note: "The request was rejected because the token
 //   expired, ..." at the end of a length cut is content, not a refusal.
 const REFUSALS = [
-  // Xiaomi MiMo (publik-balanced, seen 2026-11-05); Moonshot uses the same words.
+  // Xiaomi MiMo and Moonshot gateway filter wording.
   { start: 'The request was rejected because', exact: ['The request was rejected because it was considered high risk'] },
   // Alibaba Qwen (DashScope "data_inspection_failed").
   { start: 'Input data may contain inappropriate content', exact: ['Input data may contain inappropriate content'] },
   { start: 'Output data may contain inappropriate content', exact: ['Output data may contain inappropriate content'] },
-  // DeepSeek (publik-fast's fallback model).
+  // DeepSeek content filter wording.
   { start: 'Content Exists Risk', exact: ['Content Exists Risk'] },
-  // Zhipu GLM (publik-fast = z-ai/glm-5.3-flash), code 1301: the whole
-  // notice, or its first sentence alone.
+  // Zhipu GLM code 1301: whole notice or first sentence alone.
   { start: '系统检测到输入或生成内容可能包含不安全或敏感内容', exact: ['系统检测到输入或生成内容可能包含不安全或敏感内容，请您避免输入易产生敏感内容的提示语，感谢您的配合。', '系统检测到输入或生成内容可能包含不安全或敏感内容'] }
 ];
 const REFUSAL_SENTENCES = REFUSALS.flatMap((r) => r.exact);
@@ -507,10 +464,8 @@ function requestOptions(signal) {
   return signal ? { signal } : undefined;
 }
 
-// publik (OpenRouter behind it) always ends a stream with a finish reason and
-// "data: [DONE]". The SDK hides [DONE], so this fetch passes the bytes
-// through unchanged and notes whether it came. A stream that closed before
-// [DONE] came was cut short.
+// OpenAI-compatible gateways end SSE streams with "data: [DONE]". The SDK hides
+// [DONE], so this fetch passes bytes through unchanged and records arrival.
 function doneWatcher() {
   const seen = { done: false };
   const watchedFetch = async (input, init) => {
@@ -554,8 +509,6 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
   const pending = client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, requestOptions(signal));
   let stream;
   if (typeof onResponse === 'function' && pending && typeof pending.withResponse === 'function') {
-    // The gateway stamps x-publik-* headers at admission; hand the raw
-    // Response to the caller so the balance line can move before settlement.
     const { data, response } = await pending.withResponse();
     try { onResponse(response); } catch { /* a display hook must never break the answer */ }
     stream = data;
@@ -779,43 +732,6 @@ async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTok
   return full;
 }
 
-// publik's tiers are reasoning models, and the thinking counts inside the
-// output cap. A 700-token cap was often all thinking: 118 of 2,675 fast-tier
-// answers came back empty (output 700, reasoning 700), and on 0.2.10 one
-// screenshot answer in five was cut at 700 (prod audit 2026-11-04). As with
-// Gemini above, the cap gets headroom for thoughts, so maxTokens stays the
-// visible budget. Prod reasoning on these models: publik-fast p99 628 and max
-// 960 tokens; publik-balanced p95 1,013 and p99 2,691. So publik-fast gets
-// 2,048 tokens of room, and every other publik call (publik-balanced: Smart,
-// and screenshot questions on the fast tier) gets 4,096. The user pays for
-// the tokens used, not for the cap.
-const PUBLIK_THINKING_HEADROOM = { fast: 2048, smart: 4096 };
-function publikOutputCap(visibleTokens, model) {
-  const room = model === publik.DEFAULT_MODELS.fast ? PUBLIK_THINKING_HEADROOM.fast : PUBLIK_THINKING_HEADROOM.smart;
-  return visibleTokens + room;
-}
-
-// cue sends no reasoning_effort, so every publik tier thinks at the gateway's
-// default (publik-fast "low", publik-balanced and publik-smart "medium"), as
-// in 0.2.12. Live on publik-balanced (xiaomi/mimo-v2.6-pro), 2026-11-05:
-// "low" thought as much as "medium" (1,183 vs 1,174 reasoning tokens on the
-// same code question), and "none" answered fast but got multi-step questions
-// wrong (9 of 16 right against 15 of 15: a stacked discount, a time-zone
-// invite, a binary-search bug). Users say these answers out loud, so a
-// screenshot question keeps its thinking.
-
-// The publik model a screenshot question uses. On the smart tier that is the
-// model already chosen. On the fast tier it is the smart alias (the user's
-// Smart field, else the provisioning response's, else publik-balanced),
-// unless the user typed their own Fast model: an explicit choice stands.
-function publikVisionModel(settings, fastOrSmartModel) {
-  if (settings.smart) return fastOrSmartModel;
-  const tierModels = (settings.models || {})[PUBLIK_PROVIDER] || {};
-  const fast = String(tierModels.fast || '').trim();
-  if (fast && !publik.TIER_NAMES.includes(fast)) return fastOrSmartModel;
-  return String(tierModels.smart || '').trim() || publik.DEFAULT_MODELS.smart;
-}
-
 function createLLM(settings) {
   const provider = settings.provider;
   const keys = settings.apiKeys || {};
@@ -829,7 +745,6 @@ function createLLM(settings) {
   if (provider === 'gemini') {
     model = resolveGeminiModel(settings);
   }
-  if (provider === PUBLIK_PROVIDER && !model) model = publik.DEFAULT_MODELS[tier];
   if (provider === 'anthropic' && DEAD_ANTHROPIC_MODEL_RE.test(model || '')) {
     model = tier === 'smart' ? CURRENT_ANTHROPIC_DEFAULT_SMART : CURRENT_ANTHROPIC_DEFAULT_FAST;
   }
@@ -840,18 +755,7 @@ function createLLM(settings) {
   const minimaxRegion = settings.minimaxRegion || 'global_en';
   const endpoint = settings.azureEndpoint || '';
 
-  if (provider === PUBLIK_PROVIDER) {
-    // The packaged-build default: an OpenAI-compatible endpoint with a fixed
-    // base URL (the provisioning response's, else the build's) and the key the
-    // install minted. Never settings.baseUrl — that is the user's Custom slot.
-    const base = (settings.publik && settings.publik.baseUrl) || publik.DEFAULT_BASE_URL;
-    try {
-      baseURL = createCompatibleClientOptions(apiKey, base).baseURL;
-    } catch (error) {
-      configurationError = error.message;
-    }
-    if (!apiKey) configurationError = 'Sign in with publik to start. cue runs on your publik balance, so you need no API key.';
-  } else if (provider === CUSTOM_PROVIDER) {
+  if (provider === CUSTOM_PROVIDER) {
     try {
       const clientOptions = createCompatibleClientOptions(apiKey, settings.baseUrl);
       apiKey = clientOptions.apiKey;
@@ -875,12 +779,7 @@ function createLLM(settings) {
 
   const ready = !configurationError && !!model;
   const maxTokens = settings.smart ? 1400 : 700;
-  // publik's fast tier encodes a screenshot too coarsely to read a real
-  // screen (smoke test 2026-11-02: it named "Jira" and "Itch.io" for a
-  // LinkedIn page, from ~20-40 image tokens, while publik-balanced read it
-  // right). A question that carries a screenshot goes to the smart alias;
-  // text-only questions stay on the fast tier.
-  const visionModel = provider === PUBLIK_PROVIDER ? publikVisionModel(settings, model) : model;
+  const visionModel = model;
 
   return {
     provider, model, visionModel, apiKey, baseURL,
@@ -892,19 +791,7 @@ function createLLM(settings) {
       if (!ready) throw new Error(configurationError || `Complete the ${provider} provider settings.`);
       const useModel = params && params.imageDataUrl ? visionModel : model;
       const args = { apiKey, baseURL, endpoint, model: useModel, maxTokens, thinking: !!settings.smart, ...params, turns: sanitizeTurns(params.turns) };
-      // An explicit maxTokens: undefined (or any non-number) falls back to the
-      // default cap; it must never reach the request as NaN.
       if (!(Number.isFinite(args.maxTokens) && args.maxTokens > 0)) args.maxTokens = maxTokens;
-      const visibleTokens = args.maxTokens;
-      if (provider === PUBLIK_PROVIDER) {
-        args.maxTokens = publikOutputCap(visibleTokens, useModel);
-        args.watchDone = true;
-      } else {
-        // Own keys: the request carries no publik-only fields.
-        delete args.watchDone;
-      }
-      // publik branches return an Error carrying `.action`; the string
-      // branches keep working unchanged.
       const wrap = (error, failedModel) => {
         const wrapped = formatProviderErrorMessage(error, provider, failedModel);
         return wrapped instanceof Error ? wrapped : new Error(wrapped);
@@ -912,21 +799,7 @@ function createLLM(settings) {
       try {
         return await streamWith(provider, args, minimaxRegion);
       } catch (error) {
-        const retryModel = provider === PUBLIK_PROVIDER ? publikRefusalRetryModel(error, useModel, settings, !!args.imageDataUrl) : '';
-        if (!retryModel || (args.signal && args.signal.aborted)) throw wrap(error, useModel);
-        if (typeof args.onRetry === 'function') {
-          try { args.onRetry({ from: useModel, to: retryModel, finishReason: error.finishReason || null }); } catch { /* a log hook must never break the answer */ }
-        }
-        try {
-          return await streamOpenAI({ ...args, model: retryModel, maxTokens: publikOutputCap(visibleTokens, retryModel) });
-        } catch (retryError) {
-          // The retry's own empty or refused answer says what happened to it;
-          // any other failure of the retry (no credit, a network error) leaves
-          // the first, honest answer: the safety filter stopped it.
-          if (retryError && retryError.emptyAnswer) throw wrap(retryError, retryModel);
-          error.retryFailed = (retryError && retryError.message) || String(retryError);
-          throw wrap(error, useModel);
-        }
+        throw wrap(error, useModel);
       }
     }
   };
@@ -935,7 +808,6 @@ function createLLM(settings) {
 function streamWith(provider, args, minimaxRegion) {
   if (provider === 'openai') return streamOpenAI(args);
   if (provider === CUSTOM_PROVIDER) return streamOpenAI(args);
-  if (provider === PUBLIK_PROVIDER) return streamOpenAI(args);
   if (provider === 'ollama') return streamOllama(args);
   if (provider === 'groq') return streamOpenAI({ ...args, baseURL: 'https://api.groq.com/openai/v1' });
   if (provider === 'cerebras') return streamOpenAI({ ...args, baseURL: CEREBRAS_BASE_URL });
@@ -947,25 +819,6 @@ function streamWith(provider, args, minimaxRegion) {
   return Promise.reject(new Error('unknown provider: ' + provider));
 }
 
-// A publik-balanced answer that the safety filter stopped before any text
-// showed is asked once more, on another publik tier, never in a loop. Every
-// publik tier takes images (pricing/sheet.ts). publik-smart (openai/gpt-6-sol)
-// reads a screenshot well, but only a linked install may use it (402
-// model_requires_claim otherwise). publik-fast (z-ai/glm-5.3-flash) is open
-// to every install, but it reads a screenshot too coarsely (smoke 2026-11-02),
-// so an unlinked install's screenshot question is not asked again: its
-// honest note stands. An answer that already showed text is not asked again
-// either: the text stays, with the note.
-const PUBLIK_BALANCED = 'publik-balanced';
-function publikRefusalRetryModel(error, model, settings, hasImage) {
-  if (!error || !error.filtered || !error.emptyAnswer) return '';
-  if (model !== PUBLIK_BALANCED) return '';
-  const p = (settings && settings.publik) || {};
-  const claimed = ((p.wallet && p.wallet.claimState) || p.claimState) === 'claimed';
-  if (claimed) return 'publik-smart';
-  return hasImage ? '' : publik.DEFAULT_MODELS.fast;
-}
-
 module.exports = {
   createLLM,
   formatProviderErrorMessage,
@@ -974,8 +827,6 @@ module.exports = {
   isQuotaError,
   isNotFoundError,
   geminiGenerationConfig,
-  publikOutputCap,
-  PUBLIK_THINKING_HEADROOM,
   LENGTH_EMPTY_MESSAGE,
   EMPTY_ANSWER_MESSAGE,
   LENGTH_CUT_NOTE,
@@ -993,6 +844,5 @@ module.exports = {
   GEMINI_TRANSCRIBE_LIVE_MODEL,
   CURRENT_ANTHROPIC_DEFAULT_FAST,
   CURRENT_ANTHROPIC_DEFAULT_SMART,
-  PUBLIK_PROVIDER,
   isRateLimitError
 };

@@ -1,7 +1,7 @@
 // A timer for a request cue stops waiting for. When it fires it rejects
 // `expired` (the caller races it against the stream) and aborts `signal`, so
-// the HTTP request is cancelled too: the provider stops generating, and
-// publik stops billing, an answer nobody will see. Without the abort, a
+// the HTTP request is cancelled too: the provider stops generating and
+// billing an answer nobody will see. Without the abort, a
 // "timed out" answer kept streaming and was billed in full (base 0.2.10:
 // "timed out" at 25 s, 700 tokens billed at 42 s).
 //

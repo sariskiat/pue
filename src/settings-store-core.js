@@ -21,7 +21,7 @@
 // On load, a corrupt or truncated FILE is recovered from FILE.bak before
 // falling back to "nothing on disk yet", and every failure is logged instead
 // of swallowed. The file (and its .tmp/.bak siblings) are always written
-// 0600: this holds every BYO API key plus the publik key. 0600 is a no-op on
+// 0600: this holds every BYO API key. 0600 is a no-op on
 // Windows, where ACLs already default to the owning user.
 const fs = require('fs');
 const path = require('path');

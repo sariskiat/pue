@@ -38,14 +38,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Remove `publik` state, `apiKeys.publik`, `applinkSlidesConsent`, and `applyPublikDefault` from `src/store.js` while adding one-time `consumeLegacyProfileSeed()`. Remove `publik` routing, headers, and refusal-retry branches from `src/llm.js` and `src/stt.js`, keeping all BYOK providers and local/cloud STT intact.
 
 **Acceptance criteria:**
-- [ ] `src/store.js`, `src/llm.js`, and `src/stt.js` contain zero references to `publik` or `applink`.
-- [ ] `consumeLegacyProfileSeed()` extracts non-empty legacy `resumeText`, `starStories`, `jobDescription`, `whyCompany`, `salaryTarget`, and `questionsToAsk` once, sets `legacyMigrated: true`, and preserves saved API keys.
-- [ ] Existing BYOK provider and STT unit tests pass without regression.
+- [x] `src/store.js`, `src/llm.js`, and `src/stt.js` contain zero references to `publik` or `applink`.
+- [x] `consumeLegacyProfileSeed()` extracts non-empty legacy `resumeText`, `starStories`, `jobDescription`, `whyCompany`, `salaryTarget`, and `questionsToAsk` once, sets `legacyMigrated: true`, and preserves saved API keys.
+- [x] Existing BYOK provider and STT unit tests pass without regression.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/store-legacy-migration.test.js test/llm.test.js test/stt.test.js`
-- [ ] Build succeeds: `node --check src/store.js && node --check src/llm.js && node --check src/stt.js`
-- [ ] Manual check: Run `rg -n "publik|applink" src/store.js src/llm.js src/stt.js` and confirm 0 matches.
+- [x] Tests pass: `node --test test/store-legacy-migration.test.js test/llm.test.js test/stt.test.js`
+- [x] Build succeeds: `node --check src/store.js && node --check src/llm.js && node --check src/stt.js`
+- [x] Manual check: Run `rg -n "publik|applink" src/store.js src/llm.js src/stt.js` and confirm 0 matches.
 
 **Dependencies:** Task 1
 

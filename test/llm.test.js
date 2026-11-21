@@ -36,7 +36,7 @@ Module._load = function loadWithOpenAIStub(request, parent, isMain) {
   return originalModuleLoad.call(this, request, parent, isMain);
 };
 
-const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, PUBLIK_PROVIDER, isRateLimitError } = require('../src/llm');
+const { createLLM, formatProviderErrorMessage, isQuotaError, geminiGenerationConfig, CURRENT_GEMINI_DEFAULT, isRateLimitError } = require('../src/llm');
 
 test.after(() => {
   Module._load = originalModuleLoad;
@@ -441,133 +441,6 @@ test('createLLM: leaves a user-chosen current Gemini model alone', () => {
     models: { gemini: { fast: 'gemini-3.5-flash', smart: 'gemini-3.5-flash' } }
   }));
   assert.equal(llm.model, 'gemini-3.5-flash');
-});
-
-// ---- publik API (packaged-build default) ----------------------------------
-
-const PUBLIK_KEY = 'pk_live_' + 'a'.repeat(12) + '_' + 'b'.repeat(32);
-
-function publikSettings(overrides = {}) {
-  return {
-    provider: 'publik',
-    smart: false,
-    baseUrl: 'http://127.0.0.1:18789/v1', // the user's Custom slot — must never leak into publik
-    apiKeys: { openai: '', custom: 'gateway-token', publik: PUBLIK_KEY },
-    publik: { baseUrl: '' },
-    models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' }, custom: { fast: 'x', smart: 'x' } },
-    ...overrides
-  };
-}
-
-test('publik: routes through the publik base URL with the minted key, never the Custom base URL', async () => {
-  const llm = createLLM(publikSettings());
-  assert.equal(PUBLIK_PROVIDER, 'publik');
-  assert.equal(llm.ready, true);
-  assert.equal(llm.model, 'publik-fast');
-  await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  // fetch: the pass-through that notes the stream's "data: [DONE]" (src/llm.js doneWatcher).
-  const { fetch: watchedFetch, ...clientOptions } = capturedClientOptions;
-  assert.deepEqual(clientOptions, { apiKey: PUBLIK_KEY, baseURL: 'https://publikhq.com/api/v1' });
-  assert.equal(typeof watchedFetch, 'function');
-  assert.equal(capturedCompletionRequest.model, 'publik-fast');
-});
-
-test('publik: honours the provisioning response base_url and the smart tier alias', async () => {
-  const llm = createLLM(publikSettings({ smart: true, publik: { baseUrl: 'https://publikhq.com/api/v1-next/' } }));
-  assert.equal(llm.model, 'publik-balanced');
-  await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  assert.equal(capturedClientOptions.baseURL, 'https://publikhq.com/api/v1-next');
-});
-
-test('publik: cleared model fields fall back to the per-tier aliases', () => {
-  assert.equal(createLLM(publikSettings({ models: { publik: { fast: '', smart: '' } } })).model, 'publik-fast');
-  assert.equal(createLLM(publikSettings({ smart: true, models: { publik: { fast: '', smart: '' } } })).model, 'publik-balanced');
-});
-
-test('publik: missing key → not ready, "Sign in with publik", no request', () => {
-  const llm = createLLM(publikSettings({ apiKeys: { publik: '' } }));
-  assert.equal(llm.ready, false);
-  // The first thing a person reads names publik and its button, never a key to add.
-  assert.match(llm.configurationError, /^Sign in with publik/);
-  assert.match(llm.configurationError, /no API key/);
-  assert.doesNotMatch(llm.configurationError, /Add your|paste/i);
-  assert.equal(capturedClientOptions, null);
-});
-
-test('publik: the raw Response reaches onResponse so x-publik-* headers can drive the balance line', async () => {
-  fakeResponseHeaders = { 'x-publik-balance': '181240', 'x-publik-claim-state': 'anonymous', 'x-publik-model': 'gpt-5.6-luna' };
-  let seen = null;
-  const llm = createLLM(publikSettings());
-  const out = await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {}, onResponse: (res) => { seen = res.headers.get('x-publik-balance'); } });
-  assert.equal(out, 'ok');
-  assert.equal(seen, '181240');
-});
-
-test('publik: a stub without withResponse() still streams (onResponse is optional)', async () => {
-  const llm = createLLM(publikSettings());
-  const out = await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {}, onResponse: () => {} });
-  assert.equal(out, 'ok');
-});
-
-function sdkError(status, error, headers = {}) {
-  const e = new Error(`${status} ${JSON.stringify({ error })}`);
-  e.name = 'APIError';
-  e.status = status;      // openai v4 APIError fields
-  e.error = error;        // the envelope's inner object
-  e.headers = headers;
-  return e;
-}
-
-test('formatProviderErrorMessage: publik 402 → Error with a single link action, not the 429 free-tier text', () => {
-  const err = sdkError(402, { type: 'insufficient_credit', message: 'Not enough publik credit for this request. Check billing.', claim_state: 'anonymous', top_up_url: 'https://publikhq.com/claim/abc' });
-  assert.equal(isQuotaError(err), true, 'precondition: the generic classifier WOULD misfile this as a quota error');
-  const out = formatProviderErrorMessage(err, 'publik', 'publik-fast');
-  assert.ok(out instanceof Error);
-  assert.deepEqual(out.action, { kind: 'link', label: 'Link this computer & pick a plan', url: 'https://publikhq.com/claim/abc' });
-  // CONTRACT §12.3: the response's own message is what the banner shows.
-  assert.equal(out.message, 'Not enough publik credit for this request. Check billing.');
-  assert.doesNotMatch(out.message, /free-tier quota|add billing/);
-});
-
-test('formatProviderErrorMessage: publik 401 key_revoked → reprovision / reconnect; 429 daily cap; 400 unknown_model', () => {
-  assert.deepEqual(formatProviderErrorMessage(sdkError(401, { type: 'key_revoked', reprovision: true }), 'publik').action, { kind: 'reprovision' });
-  assert.equal(formatProviderErrorMessage(sdkError(401, { type: 'key_revoked', reprovision: false }), 'publik').action.kind, 'reconnect');
-  const cap = formatProviderErrorMessage(sdkError(429, { type: 'daily_cap_reached', claim_state: 'anonymous', claim_url: 'https://publikhq.com/claim/abc' }, { 'retry-after': '1800' }), 'publik');
-  assert.match(cap.message, /daily publik API spending cap — it resets in 30 minutes/);
-  const unknown = formatProviderErrorMessage(sdkError(400, { type: 'unknown_model' }), 'publik', 'gpt-9');
-  assert.match(unknown.message, /does not serve "gpt-9"/);
-  assert.equal(unknown.action, null);
-});
-
-test('formatProviderErrorMessage: publik connection failure → unreachable, nothing charged', () => {
-  const e = new Error('Connection error.');
-  e.name = 'APIConnectionError';
-  const out = formatProviderErrorMessage(e, 'publik', 'publik-fast');
-  assert.match(out.message, /publik API is unreachable right now\. Nothing is being charged/);
-});
-
-test('formatProviderErrorMessage: a non-publik-specific error on publik falls through to the generic copy', () => {
-  const out = formatProviderErrorMessage(sdkError(400, { type: 'invalid_request', message: 'bad request' }), 'publik', 'publik-fast');
-  assert.equal(typeof out, 'string');
-  assert.match(out, /bad request/);
-});
-
-test('llm.stream on publik rethrows the structured error with its action', async () => {
-  fakeCreateError = sdkError(402, { type: 'insufficient_credit', claim_state: 'claimed', top_up_url: 'https://publikhq.com/dashboard/api/add', available_micros: 0 });
-  const llm = createLLM(publikSettings());
-  await assert.rejects(llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} }), (e) => {
-    assert.equal(e.action.label, 'Add a plan or pack');
-    assert.equal(e.action.url, 'https://publikhq.com/dashboard/api/add');
-    // No message in the body → the local sentence that says what the link does.
-    assert.match(e.message, /^publik API balance is used up \(\$0\.00 left\)\. Add a plan or a pack at the link below, or use your own key in Settings\.$/);
-    return true;
-  });
-});
-
-test('publik never touches the Custom provider path', async () => {
-  const llm = createLLM(createCustomSettings());
-  await llm.stream({ system: 's', turns: [{ role: 'user', text: 'hi' }], onToken: () => {} });
-  assert.deepEqual(capturedClientOptions, { apiKey: 'gateway-token', baseURL: 'http://127.0.0.1:18789/v1' });
 });
 
 // A 429 carrying NO quota signal at all is the shape most providers send under
