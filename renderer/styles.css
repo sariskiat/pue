@@ -890,3 +890,14 @@ button:focus { outline: none; }
 
 /* Keep full-window overlays over the main column, not the sidebar strips. */
 #settings-scrim, #onboard-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
+
+.pue-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.pue-row .s-select { flex: 1; }
+.pue-item-list { display: flex; flex-direction: column; gap: 6px; margin: 6px 0 12px; }
+.pue-item-row { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.pue-item-title { flex: 1; font-size: 12px; color: var(--tx-1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pue-empty { font-size: 11.5px; color: var(--tx-mut); padding: 4px 0; }
+.pue-badge { padding: 2px 7px; border-radius: 999px; font-size: 10.5px; font-weight: 600; background: rgba(34,197,94,0.16); color: #86efac; }
+.pue-badge.status-warning { background: rgba(245,158,11,0.18); color: #fcd3a5; }
+.pue-badge.status-error { background: rgba(239,68,68,0.18); color: #fca5a5; }
+.s-action.compact { padding: 4px 8px; font-size: 11px; }

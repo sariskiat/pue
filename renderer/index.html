@@ -113,6 +113,8 @@
       <!-- Tab bar -->
       <div class="s-tabs">
         <button class="s-tab on" data-tab="keys" id="s-tab-main">🔑 API Keys</button>
+        <button class="s-tab" data-tab="profile">🗂️ Profile &amp; Repos</button>
+        <button class="s-tab" data-tab="workspaces">💼 Job Workspaces</button>
         <button class="s-tab" data-tab="transcription">🔉 Audio</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="appearance">🌗 Appearance</button>
@@ -177,6 +179,51 @@
         </details>
 
         <div class="s-status" id="s-status"></div>
+      </div>
+
+      <!-- Tab: Global Profile & Repos -->
+      <div class="s-body s-tab-pane hidden" data-pane="profile">
+        <label class="s-label">Experience Documents <span class="s-hint">resume, STAR notes (.pdf, .docx, .md, .txt)</span></label>
+        <div class="whisper-actions">
+          <button id="profile-add-doc" class="s-action" type="button">Add Experience File</button>
+          <button id="profile-reindex" class="s-action" type="button">Re-index All</button>
+        </div>
+        <div id="profile-docs-list" class="pue-item-list"></div>
+
+        <label class="s-label">Local Code Repositories <span class="s-hint">indexed locally · read-only lookup</span></label>
+        <div class="whisper-actions">
+          <button id="profile-add-repo" class="s-action" type="button">Add Repo Folder</button>
+        </div>
+        <div id="profile-repos-list" class="pue-item-list"></div>
+
+        <label class="s-label">Promoted Coaching Lessons <span class="s-hint">approved across interviews</span></label>
+        <div id="profile-lessons-list" class="pue-item-list"></div>
+      </div>
+
+      <!-- Tab: Job Workspaces -->
+      <div class="s-body s-tab-pane hidden" data-pane="workspaces">
+        <label class="s-label" for="ws-select">Active Job Workspace <span class="s-hint">isolated memory &amp; rounds</span></label>
+        <div class="pue-row">
+          <select id="ws-select" class="s-select"></select>
+          <button id="ws-new-btn" class="s-action" type="button">New Workspace</button>
+          <button id="ws-delete-btn" class="s-action danger" type="button">Delete</button>
+        </div>
+
+        <div class="s-field"><span>Company</span><input id="ws-company" type="text" placeholder="Acme AI" autocomplete="off" /></div>
+        <div class="s-field"><span>Role</span><input id="ws-role" type="text" placeholder="Senior AI Engineer" autocomplete="off" /></div>
+        <label class="s-label" for="ws-notes">Role Notes <span class="s-hint">why this company, salary target, questions to ask</span></label>
+        <textarea id="ws-notes" rows="4" spellcheck="false" placeholder="Why this company, target compensation, questions to ask..."></textarea>
+        <div class="whisper-actions">
+          <button id="ws-save-meta" class="s-action" type="button">Save Workspace Details</button>
+        </div>
+
+        <label class="s-label">Attached JD &amp; Test Files <span class="s-hint">scoped strictly to this workspace</span></label>
+        <div class="whisper-actions">
+          <button id="ws-add-jd" class="s-action" type="button">Add JD File</button>
+          <button id="ws-add-test-file" class="s-action" type="button">Add Test File</button>
+          <button id="ws-add-test-folder" class="s-action" type="button">Add Test Folder</button>
+        </div>
+        <div id="ws-files-list" class="pue-item-list"></div>
       </div>
 
       <!-- Tab: Transcription -->

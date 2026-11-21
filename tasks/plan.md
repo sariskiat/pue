@@ -69,7 +69,7 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 - [x] Checkpoint 4: Fast Path (`< 20ms` triage) and Deep Path (bounded 4-round tool loop + fallback) pass all tests
 
 ### Phase 5: Overlay & Settings UI (`copilot-ui`)
-- [ ] Task 13: Add Settings UI tabs for Global Profile & Repos and Job Workspaces (`SPEC-copilot-ui.md`)
+- [x] Task 13: Add Settings UI tabs for Global Profile & Repos and Job Workspaces (`SPEC-copilot-ui.md`)
 - [ ] Task 14: Add Overlay Workspace/Round pill, Prep Brief drawer, Round Dissection & Failure Journal drawer, and tool status (`SPEC-copilot-ui.md`)
 - [ ] Checkpoint 5: Full end-to-end verification (`npm test`, `node verify.js`, zero `publik`/`applink` residue)
 

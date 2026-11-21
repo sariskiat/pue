@@ -346,14 +346,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Update `renderer/index.html`, `renderer/renderer.js`, and `renderer/styles.css` to replace legacy pasted textareas with two Settings tabs: **Profile & Repos** (add/remove/reindex experience docs and repo folders with status badges and chunk counts; view/deprecate global promoted lessons) and **Job Workspaces** (create/edit/delete workspaces with confirmation, attach JD/test files and test folders, edit human P0 role notes).
 
 **Acceptance criteria:**
-- [ ] Settings modal renders **Profile & Repos** and **Job Workspaces** tabs, calls the `window.cue.profile*` and `window.cue.workspace*` bridge methods, and escapes all file paths/names safely via DOM text nodes or HTML escaping.
-- [ ] Deleting a workspace with recorded rounds prompts for explicit confirmation before calling `workspaceDelete`.
-- [ ] `node verify.js` passes all ordering checks.
+- [x] Settings modal renders **Profile & Repos** and **Job Workspaces** tabs, calls the `window.cue.profile*` and `window.cue.workspace*` bridge methods, and escapes all file paths/names safely via DOM text nodes or HTML escaping.
+- [x] Deleting a workspace with recorded rounds prompts for explicit confirmation before calling `workspaceDelete`.
+- [x] `node verify.js` passes all ordering checks.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/settings-workspaces-ui.test.js && npm test`
-- [ ] Build succeeds: `node verify.js`
-- [ ] Manual check: Verify tab switching still triggers `saveSettings` as asserted by `verify.js`.
+- [x] Tests pass: `node --test test/settings-workspaces-ui.test.js && npm test`
+- [x] Build succeeds: `node verify.js`
+- [x] Manual check: Verify tab switching still triggers `saveSettings` as asserted by `verify.js`.
 
 **Dependencies:** Task 12
 

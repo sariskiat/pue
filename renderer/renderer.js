@@ -44,6 +44,8 @@
   // ---- state -------------------------------------------------------------
   let settings = null;
   let whisperOverview = null;
+  let profileState = { documents: [], repos: [], promotedLessons: [] };
+  let workspaceState = { activeWorkspaceId: null, items: [], activeWorkspace: null };
   let busy = false;
   let aiEl = null;       // current streaming <div class="ai-text">
   let caretEl = null;
@@ -1398,6 +1400,7 @@
     if (byo) byo.open = true;
     scrim.classList.remove('hidden');
     refreshWhisperModels();
+    void refreshProfileAndWorkspaceState();
   }
   // Only hide after a successful save. A second closeSettings used to shadow
   // this one and always dismiss the modal, so validation errors (and any
@@ -1884,10 +1887,308 @@
   $('#ob-skip').addEventListener('click', finishOnboard);
   $('#logo-btn').addEventListener('click', showOnboard);
 
+  // ---- profile & workspace settings UI -----------------------------------
+  function clearChildren(host) {
+    if (!host) return;
+    host.textContent = '';
+    if (Array.isArray(host.children)) host.children.length = 0;
+  }
+
+  function renderProfileSettings() {
+    const docsHost = $('#profile-docs-list');
+    const reposHost = $('#profile-repos-list');
+    const lessonsHost = $('#profile-lessons-list');
+    clearChildren(docsHost);
+    clearChildren(reposHost);
+    clearChildren(lessonsHost);
+
+    const docs = (profileState && profileState.documents) || [];
+    if (!docs.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No experience files attached yet.';
+      docsHost.appendChild(empty);
+    } else {
+      for (const d of docs) {
+        const row = document.createElement('div');
+        row.className = 'pue-item-row';
+        const title = document.createElement('span');
+        title.className = 'pue-item-title';
+        title.textContent = `${d.label} (${d.chunkCount || 0} chunks)`;
+        const badge = document.createElement('span');
+        badge.className = `pue-badge status-${d.status || 'ok'}`;
+        badge.textContent = d.status || 'ok';
+        if (d.error) badge.title = d.error;
+        const rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 's-action danger compact';
+        rmBtn.textContent = 'Remove';
+        rmBtn.addEventListener('click', async () => {
+          profileState = await cue.profileRemoveItem(d.id);
+          renderProfileSettings();
+        });
+        row.append(title, badge, rmBtn);
+        docsHost.appendChild(row);
+      }
+    }
+
+    const repos = (profileState && profileState.repos) || [];
+    if (!repos.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No local code repositories attached yet.';
+      reposHost.appendChild(empty);
+    } else {
+      for (const r of repos) {
+        const row = document.createElement('div');
+        row.className = 'pue-item-row';
+        const title = document.createElement('span');
+        title.className = 'pue-item-title';
+        title.textContent = `${r.name} (${r.fileCount || 0} files · ${r.chunkCount || 0} chunks)`;
+        const badge = document.createElement('span');
+        badge.className = `pue-badge status-${r.status || 'ok'}`;
+        badge.textContent = r.status || 'ok';
+        if (r.error) badge.title = r.error;
+        const rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 's-action danger compact';
+        rmBtn.textContent = 'Remove';
+        rmBtn.addEventListener('click', async () => {
+          profileState = await cue.profileRemoveItem(r.id);
+          renderProfileSettings();
+        });
+        row.append(title, badge, rmBtn);
+        reposHost.appendChild(row);
+      }
+    }
+
+    const activeLessons = ((profileState && profileState.promotedLessons) || []).filter((l) => l.status === 'accepted');
+    if (!activeLessons.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No promoted global lessons yet.';
+      lessonsHost.appendChild(empty);
+    } else {
+      for (const les of activeLessons) {
+        const row = document.createElement('div');
+        row.className = 'pue-item-row';
+        const title = document.createElement('span');
+        title.className = 'pue-item-title';
+        title.textContent = les.guidance;
+        const depBtn = document.createElement('button');
+        depBtn.type = 'button';
+        depBtn.className = 's-action compact';
+        depBtn.textContent = 'Deprecate';
+        depBtn.addEventListener('click', async () => {
+          profileState = await cue.profileDeprecateLesson(les.id);
+          renderProfileSettings();
+        });
+        row.append(title, depBtn);
+        lessonsHost.appendChild(row);
+      }
+    }
+  }
+
+  function renderWorkspaceSettings() {
+    const sel = $('#ws-select');
+    const filesHost = $('#ws-files-list');
+    if (!sel || !filesHost) return;
+    clearChildren(sel);
+    clearChildren(filesHost);
+
+    const items = (workspaceState && workspaceState.items) || [];
+    for (const item of items) {
+      const opt = document.createElement('option');
+      opt.value = item.id;
+      opt.textContent = `${item.company} · ${item.role}`;
+      if (item.id === workspaceState.activeWorkspaceId) opt.selected = true;
+      sel.appendChild(opt);
+    }
+
+    const active = workspaceState && workspaceState.activeWorkspace;
+    if (!active) return;
+
+    const companyEl = $('#ws-company');
+    const roleEl = $('#ws-role');
+    const notesEl = $('#ws-notes');
+    if (companyEl) companyEl.value = active.company || '';
+    if (roleEl) roleEl.value = active.role || '';
+    if (notesEl) notesEl.value = active.notes || '';
+
+    const files = active.files || [];
+    if (!files.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No JD or test files attached to this workspace.';
+      filesHost.appendChild(empty);
+    } else {
+      for (const f of files) {
+        const row = document.createElement('div');
+        row.className = 'pue-item-row';
+        const title = document.createElement('span');
+        title.className = 'pue-item-title';
+        title.textContent = `[${(f.role || 'jd').toUpperCase()}] ${f.label} (${f.chunkCount || 0} chunks)`;
+        const badge = document.createElement('span');
+        badge.className = `pue-badge status-${f.status || 'ok'}`;
+        badge.textContent = f.isDirectory ? 'folder' : f.status || 'ok';
+        const rmBtn = document.createElement('button');
+        rmBtn.type = 'button';
+        rmBtn.className = 's-action danger compact';
+        rmBtn.textContent = 'Remove';
+        rmBtn.addEventListener('click', async () => {
+          const snap = await cue.workspaceRemoveFile(active.id, f.id);
+          applyWorkspaceSnapshot(snap);
+        });
+        row.append(title, badge, rmBtn);
+        filesHost.appendChild(row);
+      }
+    }
+  }
+
+  function applyWorkspaceSnapshot(snap) {
+    if (!snap) return;
+    workspaceState = snap;
+    renderWorkspaceSettings();
+    if (typeof renderWorkspaceOverlayBar === 'function') renderWorkspaceOverlayBar();
+  }
+
+  async function deleteSelectedWorkspace(confirmFn) {
+    const active = workspaceState && workspaceState.activeWorkspace;
+    if (!active) return false;
+    const hasRecordedTurns = Array.isArray(active.rounds) && active.rounds.some((r) => (r.turnCount || 0) > 0);
+    if (hasRecordedTurns) {
+      const ask = typeof confirmFn === 'function' ? confirmFn : (msg) => window.confirm(msg);
+      if (!ask(`Delete workspace "${active.company} - ${active.role}" and all its recorded rounds?`)) {
+        return false;
+      }
+    }
+    const snap = await cue.workspaceDelete(active.id);
+    applyWorkspaceSnapshot(snap);
+    return true;
+  }
+
+  async function refreshProfileAndWorkspaceState() {
+    try {
+      if (cue.profileGet) {
+        profileState = (await cue.profileGet()) || profileState;
+        renderProfileSettings();
+      }
+      if (cue.workspaceList) {
+        const snap = await cue.workspaceList();
+        applyWorkspaceSnapshot(snap);
+      }
+    } catch (_) {}
+  }
+
+  const profAddDocBtn = $('#profile-add-doc');
+  if (profAddDocBtn) {
+    profAddDocBtn.addEventListener('click', async () => {
+      const res = await cue.profileAddDoc('experience');
+      if (res && res.profile) {
+        profileState = res.profile;
+        renderProfileSettings();
+      }
+    });
+  }
+  const profAddRepoBtn = $('#profile-add-repo');
+  if (profAddRepoBtn) {
+    profAddRepoBtn.addEventListener('click', async () => {
+      const res = await cue.profileAddRepo();
+      if (res && res.profile) {
+        profileState = res.profile;
+        renderProfileSettings();
+      }
+    });
+  }
+  const profReindexBtn = $('#profile-reindex');
+  if (profReindexBtn) {
+    profReindexBtn.addEventListener('click', async () => {
+      profReindexBtn.disabled = true;
+      try {
+        profileState = await cue.profileReindex();
+        renderProfileSettings();
+      } finally {
+        profReindexBtn.disabled = false;
+      }
+    });
+  }
+  const wsSelectEl = $('#ws-select');
+  if (wsSelectEl) {
+    wsSelectEl.addEventListener('change', async () => {
+      if (!wsSelectEl.value) return;
+      const snap = await cue.workspaceSelect(wsSelectEl.value);
+      applyWorkspaceSnapshot(snap);
+    });
+  }
+  const wsNewBtn = $('#ws-new-btn');
+  if (wsNewBtn) {
+    wsNewBtn.addEventListener('click', async () => {
+      const snap = await cue.workspaceCreate({ company: 'New Company', role: 'Candidate Role' });
+      applyWorkspaceSnapshot(snap);
+    });
+  }
+  const wsDelBtn = $('#ws-delete-btn');
+  if (wsDelBtn) {
+    wsDelBtn.addEventListener('click', () => {
+      void deleteSelectedWorkspace();
+    });
+  }
+  const wsSaveMetaBtn = $('#ws-save-meta');
+  if (wsSaveMetaBtn) {
+    wsSaveMetaBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      const snap = await cue.workspaceUpdate(active.id, {
+        company: ($('#ws-company') && $('#ws-company').value) || active.company,
+        role: ($('#ws-role') && $('#ws-role').value) || active.role,
+        notes: ($('#ws-notes') && $('#ws-notes').value) || ''
+      });
+      applyWorkspaceSnapshot(snap);
+      showToast('Workspace saved');
+    });
+  }
+  const wsAddJdBtn = $('#ws-add-jd');
+  if (wsAddJdBtn) {
+    wsAddJdBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      const res = await cue.workspaceAttachFile(active.id, 'jd', false);
+      if (res && res.snapshot) applyWorkspaceSnapshot(res.snapshot);
+    });
+  }
+  const wsAddTestFileBtn = $('#ws-add-test-file');
+  if (wsAddTestFileBtn) {
+    wsAddTestFileBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      const res = await cue.workspaceAttachFile(active.id, 'test', false);
+      if (res && res.snapshot) applyWorkspaceSnapshot(res.snapshot);
+    });
+  }
+  const wsAddTestFolderBtn = $('#ws-add-test-folder');
+  if (wsAddTestFolderBtn) {
+    wsAddTestFolderBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      const res = await cue.workspaceAttachFile(active.id, 'test', true);
+      if (res && res.snapshot) applyWorkspaceSnapshot(res.snapshot);
+    });
+  }
+  cue.on('profile:changed', (prof) => {
+    if (prof) {
+      profileState = prof;
+      renderProfileSettings();
+    }
+  });
+  cue.on('workspace:changed', (snap) => {
+    applyWorkspaceSnapshot(snap);
+  });
+
   // ---- boot --------------------------------------------------------------
   (async function boot() {
     settings = await cue.settingsGet();
     const platformInfo = await cue.platformInfo();
+    await refreshProfileAndWorkspaceState();
 
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');
