@@ -57,7 +57,7 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 - [x] Checkpoint 2: Global profile indexes documents and repos locally and passes all tests
 
 ### Phase 3: Job Workspaces & Session Dissection (`job-workspaces`)
-- [ ] Task 7: Build sharded `src/workspace-store.js` and append-only round JSONL ledger (`SPEC-job-workspaces.md`)
+- [x] Task 7: Build sharded `src/workspace-store.js` and append-only round JSONL ledger (`SPEC-job-workspaces.md`)
 - [ ] Task 8: Build pre-call Prep Brief prompt builder and parser in `src/prep-brief.js` (`SPEC-job-workspaces.md`)
 - [ ] Task 9: Build post-round Session Dissector (`src/round-dissector.js`) and 3-tier Failure Journal (`SPEC-job-workspaces.md`)
 - [ ] Checkpoint 3: Isolated workspaces, JSONL round recovery, Prep Brief, and Dissection pass all tests

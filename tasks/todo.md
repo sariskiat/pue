@@ -183,14 +183,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Implement `src/workspace-store.js` storing `workspaces/index.json`, debounced `workspaces/<wsId>.json` (`1500ms` + `flushAll`), and lazy append-only `workspaces/<wsId>/rounds/<rndId>.jsonl` with write-failure pointer rollback. Support attaching JD/test files and test folders, creating/switching/clearing rounds non-destructively, `buildRoundProjection()`, strict per-workspace `workspaceMemoryBlock()`, `searchWorkspaceRounds()`, and `allowedRootsForWorkspace()`.
 
 **Acceptance criteria:**
-- [ ] Workspace A and Workspace B maintain strictly isolated `workspaceMemoryBlock()`, `searchWorkspaceRounds()`, `allowedRootsForWorkspace()`, and `rounds/*.jsonl` files.
-- [ ] Simulated disk error during `appendRoundEvent` rolls back in-memory `leafId` without corrupting subsequent parent links.
-- [ ] `clearRoundTranscript` archives a non-empty round and opens a fresh round without erasing prior JSONL lines.
+- [x] Workspace A and Workspace B maintain strictly isolated `workspaceMemoryBlock()`, `searchWorkspaceRounds()`, `allowedRootsForWorkspace()`, and `rounds/*.jsonl` files.
+- [x] Simulated disk error during `appendRoundEvent` rolls back in-memory `leafId` without corrupting subsequent parent links.
+- [x] `clearRoundTranscript` archives a non-empty round and opens a fresh round without erasing prior JSONL lines.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/workspace-store.test.js`
-- [ ] Build succeeds: `node --check src/workspace-store.js`
-- [ ] Manual check: Inspect generated `index.json`, `<wsId>.json`, and `<rndId>.jsonl` files in temp test directory.
+- [x] Tests pass: `node --test test/workspace-store.test.js`
+- [x] Build succeeds: `node --check src/workspace-store.js`
+- [x] Manual check: Inspect generated `index.json`, `<wsId>.json`, and `<rndId>.jsonl` files in temp test directory.
 
 **Dependencies:** Task 6
 
