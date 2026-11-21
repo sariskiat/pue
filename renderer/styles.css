@@ -59,11 +59,11 @@ html, body {
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
   opacity: var(--cue-opacity, 1);
 }
-#settings-scrim, #onboard-scrim, #consent-scrim, #update-scrim {
+#settings-scrim, #onboard-scrim {
   opacity: var(--cue-opacity, 1);
 }
 #app.opacity-open { padding-top: 82px; }
-#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #consent-scrim, #update-scrim { pointer-events: auto; }
+#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim { pointer-events: auto; }
 /* #app is a flex column: without this the toolbar is a shrinkable flex item, so
    a tall panel (long transcript, long response) squeezes the Stop/Hide/Quit
    controls down to nothing and leaves no way to stop listening. */
@@ -575,54 +575,19 @@ button:focus { outline: none; }
 .s-caller button:hover { background: rgba(255,255,255,0.08); color: var(--tx-2); }
 .s-caller-empty { color: var(--tx-mut); font-size: 11px; }
 .s-status { color: var(--tx-mut); font-size: 11.5px; margin-top: 6px; min-height: 16px; line-height: 1.4; }
-/* publik API (packaged-build default) */
 .s-default-badge { margin-left: 5px; padding: 1px 6px; border-radius: var(--r-pill); font-size: 9.5px; font-weight: 600; letter-spacing: 0.02em; color: #9dc0ff; background: rgba(60,131,245,0.16); border: 1px solid rgba(60,131,245,0.35); }
-.publik-card { display: flex; flex-direction: column; gap: 8px; margin: 4px 0 8px; padding: 12px; border: 1px solid rgba(60,131,245,0.28); border-radius: 12px; background: rgba(60,131,245,0.06); }
-.publik-line { color: var(--tx-1); font-size: 12.5px; font-weight: 600; line-height: 1.4; }
-.publik-line.warn { color: #fcd3a5; }
 #cue-status button { margin-left: 10px; padding: 4px 10px; border-radius: 8px; border: 1px solid rgba(60,131,245,0.40); background: rgba(60,131,245,0.14); color: #cfe0ff; font: 600 11.5px var(--font); cursor: pointer; }
 #cue-status button:hover { background: rgba(60,131,245,0.24); }
-/* publik first in a toast: "Switch to publik" / "Sign in with publik" is the
-   blue button; a second button ("Fix my key") is quiet. */
-#cue-status button[data-kind="switch"], #cue-status button[data-kind="disclosure"] { border-color: transparent; background: var(--accent); color: #fff; }
-#cue-status button[data-kind="switch"]:hover, #cue-status button[data-kind="disclosure"]:hover { filter: brightness(1.08); background: var(--accent); }
 #cue-status button.secondary { margin-left: 6px; border-color: rgba(255,255,255,0.18); background: transparent; color: var(--tx-2); }
 #cue-status button.secondary:hover { background: rgba(255,255,255,0.08); }
-#onboard.dialog .ob-dots, #onboard.dialog .ob-actions { display: none; }
-#onboard.card .ob-actions { display: none; }
-/* First-run card (CONTRACT §12.1): balance line, justification, primary CTA */
-.ob-body .publik-card-balance { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: -0.01em; margin: 2px 0 10px; text-align: center; }
-.ob-body .publik-card-why { color: var(--tx-2); }
 .ob-buttons button.ob-cta { border-color: transparent; background: var(--accent); color: #fff; }
 .ob-buttons button.ob-cta:hover { filter: brightness(1.08); background: var(--accent); }
-.publik-card .s-action.primary { border-color: transparent; background: var(--accent); color: #fff; }
-.publik-card .s-action.primary:hover:not(:disabled) { filter: brightness(1.08); background: var(--accent); color: #fff; }
-/* publik first: the card leads the first tab, one big button */
-.publik-lede { color: #fff; font-size: 15px; font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
-.publik-card .s-action.publik-primary { align-self: stretch; padding: 10px 14px; font-size: 14px; font-weight: 600; border-radius: 10px; }
-.publik-secondary { margin-top: 2px; }
-/* "Use your own API key instead": closed by default at the bottom */
 .byo-section { margin-top: 10px; border-top: 1px solid var(--bd-hair); padding-top: 10px; }
 .byo-section > summary { cursor: pointer; color: var(--tx-2); font-size: 13px; font-weight: 600; list-style: none; }
 .byo-section > summary::-webkit-details-marker { display: none; }
 .byo-section > summary::before { content: '▸ '; color: var(--tx-mut); }
 .byo-section[open] > summary::before { content: '▾ '; }
 .byo-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
-/* First-run prompt in the overlay while nothing can answer */
-.setup-cta { display: flex; flex-direction: column; gap: 6px; margin: 12px 0 10px; padding: 14px 16px; border-radius: 14px; border: 1px solid rgba(60,131,245,0.35); background: rgba(60,131,245,0.10); animation: fadeUp 200ms ease both; }
-.setup-title { color: #fff; font-size: 17px; font-weight: 700; letter-spacing: -0.01em; }
-.setup-body { color: var(--tx-2); font-size: 13.5px; line-height: 1.4; }
-.setup-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 4px; }
-.setup-primary { border: none; background: var(--accent); color: #fff; font: 600 14px var(--font); padding: 9px 18px; border-radius: var(--r-pill); cursor: pointer; }
-.setup-primary:hover { filter: brightness(1.08); }
-.setup-secondary { border: none; background: transparent; color: var(--tx-mut); font: 500 12.5px var(--font); padding: 4px 2px; cursor: pointer; text-decoration: underline; text-underline-offset: 2px; }
-.setup-secondary:hover { color: var(--tx-2); }
-.publik-why { margin: 0; }
-.publik-why summary { cursor: pointer; color: #9dc0ff; font-size: 12px; font-weight: 600; list-style: none; }
-.publik-why summary::-webkit-details-marker { display: none; }
-.publik-why summary::before { content: '▸ '; }
-.publik-why[open] summary::before { content: '▾ '; }
-.publik-why .s-note { margin-top: 6px; }
 .ob-body .ob-fine { display: block; margin-top: 10px; color: var(--tx-mut); font-size: 11.5px; }
 .ob-body .ob-fine a { color: #9dc0ff; text-decoration: underline; cursor: pointer; }
 
@@ -668,9 +633,6 @@ button:focus { outline: none; }
 .ob-body .hl { color: #9dc0ff; font-weight: 600; }
 .ob-buttons { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
 .ob-buttons:empty { display: none; }
-/* publik first (step 1): one line that says how cue runs, then the blue
-   "Sign in with publik" with a small "Use my own key instead" link under
-   it, then the cost and data-path fine print. */
 .ob-body .ob-lede { font-size: 16px; font-weight: 600; color: #fff; text-align: center; line-height: 1.4; }
 .ob-body .ob-sub { margin-top: 8px; text-align: center; color: var(--tx-2); font-size: 13px; }
 .ob-buttons button.ob-link { flex: 0 0 100%; min-width: 0; padding: 2px 6px; border: none; background: transparent; color: var(--tx-2); font-size: 12px; font-weight: 500; text-decoration: underline; }
@@ -926,18 +888,5 @@ button:focus { outline: none; }
   .transcript-sidebar { transition: none !important; }
 }
 
-/* ============================ Assistant access ============================ */
-/* Anything full-screen added here must ALSO be listed in the pointer-events
-   rule near the top and in the click-through selector in renderer.js, or the
-   window stays transparent to the mouse and the buttons cannot be clicked. */
-#consent-scrim, #update-scrim { position: fixed; inset: 0; z-index: 40; display: grid; place-items: center; background: rgba(0,0,0,0.5); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
-/* Keep full-window overlays over the main column, not the sidebar strips. Declared after
-   each overlay's `inset: 0` so it wins. */
-#settings-scrim, #onboard-scrim, #consent-scrim, #update-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
-#consent-scrim.hidden, #update-scrim.hidden { display: none; }
-/* Update messages (publik-updater.cjs) use the same sheet as the access request. */
-#update-scrim { z-index: 41; }
-#consent, #update-sheet { width: min(430px, 92vw); padding: 24px 26px 16px; text-align: center; animation: overlayIn 240ms cubic-bezier(0.22,1,0.36,1); }
-.cs-title { font-size: 15px; font-weight: 620; color: var(--tx-1); line-height: 1.35; }
-.cs-body { margin-top: 10px; color: var(--tx-mut); font-size: 12.5px; line-height: 1.5; white-space: pre-line; }
-.cs-actions { display: flex; gap: 10px; justify-content: center; margin-top: 18px; }
+/* Keep full-window overlays over the main column, not the sidebar strips. */
+#settings-scrim, #onboard-scrim { left: var(--side-w); right: auto; width: var(--main-w); }

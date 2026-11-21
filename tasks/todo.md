@@ -65,14 +65,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Remove `ensureSignedIn`, `publik*` state/wallet/batcher wiring, `startUpdates`, and `applink` server setup from `main.js` and `preload.js`. Remove `publik` UI cards, wallet status, `applink` consent prompts, and update buttons from `renderer/index.html`, `renderer/renderer.js`, and `renderer/styles.css` while preserving all `verify.js` ordering invariants.
 
 **Acceptance criteria:**
-- [ ] `rg -n "publikhq\.com|ensureSignedIn|applink|publik" main.js preload.js src/ renderer/` returns 0 hits.
-- [ ] `preload.js` exposes zero `publik*`, `updates*`, or `appLink*` methods or listener channels.
-- [ ] Full `npm test` suite and `node verify.js` pass with exit code `0`.
+- [x] `rg -n "publikhq\.com|ensureSignedIn|applink|publik" main.js preload.js src/ renderer/` returns 0 hits.
+- [x] `preload.js` exposes zero `publik*`, `updates*`, or `appLink*` methods or listener channels.
+- [x] Full `npm test` suite and `node verify.js` pass with exit code `0`.
 
 **Verification:**
-- [ ] Tests pass: `npm test`
-- [ ] Build succeeds: `node verify.js`
-- [ ] Manual check: Verify `node --check main.js && node --check preload.js && node --check renderer/renderer.js`.
+- [x] Tests pass: `npm test`
+- [x] Build succeeds: `node verify.js`
+- [x] Manual check: Verify `node --check main.js && node --check preload.js && node --check renderer/renderer.js`.
 
 **Dependencies:** Task 2
 
@@ -88,10 +88,10 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 ---
 
 ## Checkpoint 1: After Tasks 1-3 (`core-byok-fork` complete)
-- [ ] All unit tests pass (`npm test`)
-- [ ] Static UI wiring check passes (`node verify.js`)
-- [ ] Zero `publik` or `applink` references remain in runtime files
-- [ ] Ready to build `profile-repo-index`
+- [x] All unit tests pass (`npm test`)
+- [x] Static UI wiring check passes (`node verify.js`)
+- [x] Zero `publik` or `applink` references remain in runtime files
+- [x] Ready to build `profile-repo-index`
 
 ---
 

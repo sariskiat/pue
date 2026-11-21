@@ -32,10 +32,9 @@ const rendererSrc = readSource('renderer/renderer.js');
 const preloadSrc = readSource('preload.js');
 
 const settings = {
-  provider: 'publik', smart: false,
-  apiKeys: { publik: 'pk_test_abcdefghijkl_abcdefghijklmnopqrstuvwxyz012345' },
-  publik: { baseUrl: '' },
-  models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' } }
+  provider: 'openai', smart: false,
+  apiKeys: { openai: 'sk-own' },
+  models: { openai: { fast: 'gpt-own', smart: 'gpt-own' } }
 };
 const text = (t) => ({ choices: [{ delta: { content: t } }] });
 const thinking = (t) => ({ choices: [{ delta: { reasoning: t, reasoning_details: [{ type: 'reasoning.text', text: t }] } }] });
@@ -160,8 +159,8 @@ test('a slide caption cut at its cap is trimmed and ends with "…", with no cut
   const caption = await createLLM(settings).stream({ system: 's', turns: [{ role: 'user', text: 'q' }], imageDataUrl: IMAGE, maxTokens: 300, lengthCut: 'ellipsis', onToken: (t) => got.push(t) });
   assert.equal(caption, 'Q3 revenue grew 12%…');
   assert.ok(!got.join('').includes('Cut off'));
-  assert.equal(created.model, 'publik-balanced');
-  assert.equal(created.max_tokens, 300 + 4096);
+  assert.equal(created.model, 'gpt-own');
+  assert.equal(created.max_tokens, 300);
 });
 
 test('a whole slide caption is unchanged', async () => {

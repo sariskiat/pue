@@ -112,46 +112,20 @@
 
       <!-- Tab bar -->
       <div class="s-tabs">
-        <button class="s-tab on" data-tab="keys" id="s-tab-main">🪙 publik</button>
+        <button class="s-tab on" data-tab="keys" id="s-tab-main">🔑 API Keys</button>
         <button class="s-tab" data-tab="transcription">🔉 Audio</button>
         <button class="s-tab" data-tab="style">✨ Style</button>
         <button class="s-tab" data-tab="appearance">🌗 Appearance</button>
       </div>
 
-      <!-- Tab: publik (first). The publik card comes first; every key and
-           provider control sits in the closed "Use your own API key instead"
-           section at the bottom. -->
+      <!-- Tab: API Keys -->
       <div class="s-body s-tab-pane" data-pane="keys">
-        <!-- Text and buttons are filled by renderPublikBlock() from publik:state
-             and renderer/publik-card.js, so the copy has one source. -->
-        <div id="publik-settings" class="publik-card hidden">
-          <div class="publik-lede" id="publik-lede">cue runs on your publik balance. You need no API key.</div>
-          <div class="publik-line" id="publik-status-note">Not connected.</div>
-          <div class="publik-line warn hidden" id="publik-low-note"></div>
-          <button id="publik-primary" class="s-action primary publik-primary hidden"></button>
-          <div class="s-note" id="publik-cost-note"></div>
-          <details class="publik-why" id="publik-why">
-            <summary id="publik-why-summary">Why it costs money</summary>
-            <div class="s-note" id="publik-why-text"></div>
-          </details>
-          <div class="s-note" id="publik-data-note"></div>
-          <div class="whisper-actions publik-secondary">
-            <button id="publik-manage" class="s-action hidden">Manage plan</button>
-            <button id="publik-add-credit" class="s-action hidden">Add a plan or pack</button>
-            <button id="publik-pricing" class="s-action">How pricing works</button>
-            <button id="publik-disconnect" class="s-action danger hidden">Disconnect publik</button>
-          </div>
-        </div>
-
         <label class="s-label">Models <span class="s-hint">fast = Smart off · smart = Smart on</span></label>
         <div class="s-field"><span>Fast</span><input id="model-fast" type="text" autocomplete="off" /></div>
         <div class="s-field"><span>Smart</span><input id="model-smart" type="text" autocomplete="off" /></div>
 
-        <label class="s-label">Assistant access <span class="s-hint">programs allowed to see what cue is doing</span></label>
-        <div class="s-callers" id="applink-callers"></div>
-
-        <details id="byo-section" class="byo-section">
-          <summary id="byo-summary"><span id="byo-title">Use your own API key instead</span> <span class="s-hint" id="byo-current"></span></summary>
+        <details id="byo-section" class="byo-section" open>
+          <summary id="byo-summary"><span id="byo-title">API keys</span> <span class="s-hint" id="byo-current"></span></summary>
           <div class="byo-body">
             <label class="s-label">Provider</label>
             <div class="s-seg" id="provider-seg">
@@ -291,14 +265,6 @@
           <span id="s-opacity-value">100%</span>
         </div>
       </div>
-
-      <!-- Under every tab: cue has no menu bar (no Dock icon, a frameless window), so the
-           "Check for Updates…" item of publik-updater.cjs is here. Hidden on Linux (manual download). -->
-      <div class="s-foot">
-        <button id="s-check-updates" class="s-action">Check for Updates…</button>
-      </div>
-
-
     </div>
   </div>
 
@@ -309,10 +275,8 @@
       <div class="ob-icon" id="ob-icon"></div>
       <div class="ob-title" id="ob-title"></div>
       <div class="ob-body" id="ob-body"></div>
-      <!-- A step's failure (publik setup): outside the scrolling text so it is always in view. -->
       <div class="ob-error hidden" id="ob-error" role="alert"></div>
       <div class="ob-buttons" id="ob-buttons"></div>
-      <!-- Fine print under a step's buttons (the publik step: cost, data path, terms). -->
       <div class="ob-after hidden" id="ob-after"></div>
       <div class="ob-actions">
         <button id="ob-skip" class="ob-ghost">Skip</button>
@@ -323,32 +287,7 @@
     </div>
   </div>
 
-  <!-- Assistant access request. Shown in-window rather than as a native dialog:
-       cue hides its dock icon, so an OS panel never comes forward and cannot be
-       clicked. -->
-  <div id="consent-scrim" class="hidden">
-    <div id="consent" class="glass">
-      <div class="cs-title" id="cs-title"></div>
-      <div class="cs-body" id="cs-body"></div>
-      <div class="cs-actions">
-        <button id="cs-deny" class="ob-ghost">Don’t allow</button>
-        <button id="cs-allow" class="ob-primary">Allow</button>
-      </div>
-    </div>
-  </div>
-
-  <!-- Update messages (publik-updater.cjs): the restart question and the result of Check for
-       Updates…. In-window for the same reason as the access request above. -->
-  <div id="update-scrim" class="hidden">
-    <div id="update-sheet" class="glass" role="alertdialog" aria-labelledby="up-title" aria-describedby="up-body">
-      <div class="cs-title" id="up-title"></div>
-      <div class="cs-body" id="up-body"></div>
-      <div class="cs-actions" id="up-actions"></div>
-    </div>
-  </div>
-
   <script src="icons.js"></script>
-  <script src="publik-card.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

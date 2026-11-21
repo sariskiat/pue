@@ -64,19 +64,16 @@ const INCOMPLETE_NOTE = '\n\n(Incomplete: the answer stopped before the model fi
 const MIMO = 'The request was rejected because it was considered high risk';
 const ZHIPU = '系统检测到输入或生成内容可能包含不安全或敏感内容，请您避免输入易产生敏感内容的提示语，感谢您的配合。';
 
-const PUBLIK_KEY = 'pk_test_abcdefghijkl_abcdefghijklmnopqrstuvwxyz012345';
 function publikSettings(overrides = {}) {
   return {
-    provider: 'publik', smart: false,
-    apiKeys: { publik: PUBLIK_KEY, openai: 'sk-own', custom: 'sk-custom', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
-    publik: { baseUrl: '', claimState: 'claimed' },
+    provider: 'openai', smart: false,
+    apiKeys: { openai: 'sk-own', custom: 'sk-custom', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
     baseUrl: 'http://127.0.0.1:1/v1',
     azureEndpoint: 'https://cue-test.cognitiveservices.azure.com',
-    models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' }, openai: { fast: 'gpt-own', smart: 'gpt-own' }, custom: { fast: 'my-local', smart: 'my-local' } },
+    models: { openai: { fast: 'gpt-own-fast', smart: 'gpt-own-smart' }, custom: { fast: 'my-local', smart: 'my-local' } },
     ...overrides
   };
 }
-const anonymous = { baseUrl: '', claimState: 'anonymous' };
 function text(t) { return { choices: [{ index: 0, delta: { content: t }, finish_reason: null }] }; }
 function finish(reason) { return { choices: [{ index: 0, delta: {}, finish_reason: reason }], usage: { prompt_tokens: 900, completion_tokens: 40 } }; }
 const IMAGE = 'data:image/jpeg;base64,AAAA';
@@ -110,12 +107,12 @@ test('D1: a normal answer that ends with a listed phrase (other case) is shown w
   assert.deepEqual(retries, []);
 });
 
-test('D1: an answer that is only the phrase in another case is shown, never asked again on publik-smart', async () => {
+test('D1: an answer that is only the phrase in another case is shown whole', async () => {
   replies = [[text('content exists risk'), finish('stop')]];
   const { result, error } = await ask(balanced());
   assert.equal(error, null);
   assert.equal(result, 'content exists risk');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced']);
+  assert.deepEqual(requests.map((r) => r.model), ['gpt-own-smart']);
 });
 
 test('D1: a list that ends with the exact phrase, and an answer that ends with a quoted message, stay whole', async () => {
@@ -129,11 +126,11 @@ test('D1: a list that ends with the exact phrase, and an answer that ends with a
   assert.equal(requests.length, 3, 'no retry');
 });
 
-test('D1 guard: the exact message as the whole answer with "stop" is still a refusal (one retry)', async () => {
-  replies = [[text(MIMO + '.'), finish('stop')], [text('Smart answer.'), finish('stop')]];
-  const { result } = await ask(balanced());
-  assert.equal(result, 'Smart answer.');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-smart']);
+test('D1 guard: the exact message as the whole answer with "stop" is still a refusal', async () => {
+  replies = [[text(MIMO + '.'), finish('stop')]];
+  const { error, shown } = await ask(balanced());
+  assert.equal(error.message, FILTER_EMPTY);
+  assert.equal(shown, '');
 });
 
 test('D1/edge: a Chinese answer that quotes the Zhipu notice keeps all its text with "stop"', async () => {
@@ -142,13 +139,13 @@ test('D1/edge: a Chinese answer that quotes the Zhipu notice keeps all its text 
   const { result, shown } = await ask(balanced());
   assert.equal(result, answer);
   assert.equal(shown, answer);
-  replies = [[text(ZHIPU), finish('stop')], [finish('content_filter')]];
+  replies = [[text(ZHIPU), finish('stop')]];
   assert.equal((await ask(publikSettings({ smart: true }))).error.message, FILTER_EMPTY, 'guard: the notice alone is a refusal');
 });
 
 // ---- D2: under content_filter, the provider's message goes, whatever its wording
 
-test('D2: "high-risk", a request id, a double space: dropped under content_filter, then one retry', async () => {
+test('D2: "high-risk", a request id, a double space: dropped under content_filter', async () => {
   for (const variant of [
     'The request was rejected because it was considered high-risk',
     MIMO + ' (request id: gen-1762300000-AbC)',
@@ -157,11 +154,10 @@ test('D2: "high-risk", a request id, a double space: dropped under content_filte
     'The request  was rejected\nbecause it was considered high risk'
   ]) {
     requests = [];
-    replies = [[text(variant.slice(0, 11)), text(variant.slice(11)), finish('content_filter')], [text('Smart answer.'), finish('stop')]];
-    const { result, shown } = await ask(balanced());
-    assert.equal(result, 'Smart answer.', variant);
-    assert.equal(shown, 'Smart answer.', variant);
-    assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-smart'], variant);
+    replies = [[text(variant.slice(0, 11)), text(variant.slice(11)), finish('content_filter')]];
+    const { error, shown } = await ask(balanced());
+    assert.equal(error.message, FILTER_EMPTY, variant);
+    assert.equal(shown, '', variant);
   }
 });
 
@@ -266,28 +262,6 @@ test('D3: Gemini: no finishReason (or FINISH_REASON_UNSPECIFIED) is a whole answ
 
 // ---- D4: retries from slide captions and meeting notes are logged ------------
 
-test('D4: meeting notes: the one retry reaches the onRetry hook', async () => {
-  const fs = require('fs');
-  const os = require('os');
-  const path = require('path');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-cf2-'));
-  const retries = [];
-  try {
-    const store = createMeetingStore({ file: path.join(dir, 'meetings.json') });
-    const memory = createMeetingMemory({ store, llmFactory: () => createLLM(publikSettings({ smart: true })), now: () => 1_000_010, log: () => {}, minTurnsForNotes: 2, onRetry: (r) => retries.push(r) });
-    memory.onTurn({ channel: 'them', text: 'The wick draws the melted wax up.', ts: 1_000_001 });
-    memory.onTurn({ channel: 'you', text: 'Then the vapour burns.', ts: 1_000_002 });
-    replies = [[text(MIMO), finish('content_filter')], [text('Meeting summary:\nWax and wick.'), finish('stop')]];
-    const notes = await memory.refreshNotes();
-    assert.ok(notes && notes.summary);
-    assert.deepEqual(retries, [{ from: 'publik-balanced', to: 'publik-smart', finishReason: 'content_filter' }]);
-    // As 0.2.12: no reasoning_effort, on the first try or the retry.
-    assert.deepEqual(requests.map((r) => 'reasoning_effort' in r), [false, false]);
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true });
-  }
-});
-
 test('D4: main.js logs caption and meeting-notes retries as llm_filter_retry', () => {
   const { readSource, fnFrom } = require('./source-text');
   const mainSrc = readSource('main.js');
@@ -299,23 +273,20 @@ test('D4: main.js logs caption and meeting-notes retries as llm_filter_retry', (
 
 // ---- reasoning effort: exactly what 0.2.12 sent -------------------------------
 
-// fbd52fe's OpenAI-compatible request body, for every provider and mode.
 const FBD52FE_BODY_KEYS = ['max_tokens', 'messages', 'model', 'stream'];
 const bodyKeys = (r) => Object.keys(r).sort();
 
-test('effort: assist and ask (a screenshot question on the fast tier) send no reasoning_effort, as 0.2.12', async () => {
+test('effort: assist and ask (a screenshot question on the fast tier) send no reasoning_effort', async () => {
   replies = [[text('Revenue is $4.2M.'), finish('stop')]];
   const { result } = await ask(publikSettings(), { imageDataUrl: IMAGE });
   assert.equal(result, 'Revenue is $4.2M.');
-  assert.equal(requests[0].model, 'publik-balanced');
+  assert.equal(requests[0].model, 'gpt-own-fast');
   assert.equal('reasoning_effort' in requests[0], false);
   assert.deepEqual(bodyKeys(requests[0]), FBD52FE_BODY_KEYS);
 });
 
-test('effort: every mode\'s request body matches 0.2.12 (fbd52fe) on the effort field, fast and Smart', async () => {
+test('effort: every mode\'s request body matches clean OpenAI schema, fast and Smart', async () => {
   const { MODES } = require('../src/prompts');
-  // The params each call site passes (main.js runFeature / captionSlide,
-  // src/meeting-memory.js), plus a stale caller that still asks for a level.
   const calls = [
     ...Object.entries(MODES).map(([name, def]) => [name, def.needsScreen ? { imageDataUrl: IMAGE } : {}]),
     ['caption', { imageDataUrl: IMAGE, maxTokens: 300, lengthCut: 'ellipsis' }],
@@ -335,14 +306,7 @@ test('effort: every mode\'s request body matches 0.2.12 (fbd52fe) on the effort 
   }
 });
 
-test('effort: the one filter retry sends no reasoning_effort either', async () => {
-  replies = [[text(MIMO), finish('content_filter')], [text('It is a slide.'), finish('stop')]];
-  const { result } = await ask(publikSettings(), { imageDataUrl: IMAGE });
-  assert.equal(result, 'It is a slide.');
-  assert.deepEqual(requests.map((r) => [r.model, 'reasoning_effort' in r]), [['publik-balanced', false], ['publik-smart', false]]);
-});
-
-test('effort: call sites as 0.2.12: no mode carries an effort, main.js and meeting notes pass none, llm.js never writes one', () => {
+test('effort: call sites: no mode carries an effort, main.js and meeting notes pass none, llm.js never writes one', () => {
   const { MODES } = require('../src/prompts');
   for (const [name, def] of Object.entries(MODES)) assert.equal('effort' in def, false, name);
   const { readSource, fnFrom } = require('./source-text');
@@ -410,11 +374,4 @@ test('effort guard: own keys never get reasoning_effort, even when a caller asks
   await ask(custom(), { reasoningEffort: 'low' });
   assert.equal(requests.length, 2);
   for (const r of requests) assert.equal('reasoning_effort' in r, false);
-});
-
-test('effort guard: an unlinked install still gets its refused text question asked once on publik-fast', async () => {
-  replies = [[text(MIMO), finish('content_filter')], [text('Fast answer.'), finish('stop')]];
-  const { result } = await ask(publikSettings({ smart: true, publik: anonymous }));
-  assert.equal(result, 'Fast answer.');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-fast']);
 });

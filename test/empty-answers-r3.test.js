@@ -39,12 +39,11 @@ const { createMeetingStore } = require('../src/meetings');
 const { createMeetingMemory } = require('../src/meeting-memory');
 const source = require('./source-text');
 
-function publikSettings(overrides = {}) {
+function ownSettings(overrides = {}) {
   return {
-    provider: 'publik', smart: false,
-    apiKeys: { publik: 'pk_test_abcdefghijkl_abcdefghijklmnopqrstuvwxyz012345', openai: 'sk-own' },
-    publik: { baseUrl: '' },
-    models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' }, openai: { fast: 'gpt-own', smart: 'gpt-own' } },
+    provider: 'openai', smart: false,
+    apiKeys: { openai: 'sk-own' },
+    models: { openai: { fast: 'gpt-own', smart: 'gpt-own' } },
     ...overrides
   };
 }
@@ -56,35 +55,13 @@ const ask = (settings, params = {}) => createLLM(settings).stream({ system: 's',
 
 test.beforeEach(() => { created = null; options = null; chunks = [text('ok'), finish('stop')]; });
 
-// ---- 1. publik-balanced gets 4,096 tokens of thinking room ------------------
-
-test('1: a screenshot question on the fast tier (publik-balanced) gets 4,096 thinking room: 700 -> 4,796', async () => {
-  await ask(publikSettings(), { imageDataUrl: IMAGE });
-  assert.equal(created.model, 'publik-balanced');
-  assert.equal(created.max_tokens, 4796);
-});
-
-test('1: every publik-balanced call gets 4,096, also a fast tier set to publik-balanced', async () => {
-  await ask(publikSettings({ models: { publik: { fast: 'publik-balanced', smart: 'publik-balanced' } } }));
-  assert.equal(created.model, 'publik-balanced');
-  assert.equal(created.max_tokens, 700 + 4096);
-  await ask(publikSettings({ smart: true }), { imageDataUrl: IMAGE });
-  assert.equal(created.max_tokens, 1400 + 4096);
-});
-
-test('1: publik-fast text keeps 2,048 (glm p99 628, max 960): 2,748', async () => {
-  await ask(publikSettings());
-  assert.equal(created.model, 'publik-fast');
-  assert.equal(created.max_tokens, 2748);
-});
-
 // ---- 2. stored meeting notes never carry the cut-off note --------------------
 
 function notesHarness() {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-notes-cut-'));
   const store = createMeetingStore({ file: path.join(dir, 'meetings.json') });
   let clock = 1_000_000;
-  const memory = createMeetingMemory({ store, llmFactory: () => createLLM(publikSettings()), now: () => clock, log: () => {}, minTurnsForNotes: 2 });
+  const memory = createMeetingMemory({ store, llmFactory: () => createLLM(ownSettings()), now: () => clock, log: () => {}, minTurnsForNotes: 2 });
   memory.onTurn({ channel: 'them', text: 'Ship the pipeline Tuesday?', ts: 1_000_001 });
   memory.onTurn({ channel: 'you', text: 'Yes, and budget is forty thousand.', ts: 1_000_002 });
   clock += 10;
@@ -112,18 +89,11 @@ test('2: notes with headings cut in an action item end that item with "…"', as
 
 // ---- 3. maxTokens: undefined falls back to the default cap ------------------
 
-test('3: an explicit maxTokens: undefined on publik sends the default cap, never NaN', async () => {
-  await ask(publikSettings(), { maxTokens: undefined });
-  assert.equal(created.max_tokens, 2748);
-  await ask(publikSettings(), { maxTokens: undefined, imageDataUrl: IMAGE });
-  assert.equal(created.max_tokens, 4796);
-  await ask(publikSettings({ smart: true }), { maxTokens: null });
-  assert.equal(created.max_tokens, 1400 + 4096);
-});
-
-test('3: an own key with maxTokens: undefined also gets the default cap', async () => {
-  await ask(publikSettings({ provider: 'openai' }), { maxTokens: undefined });
+test('3: an own key with maxTokens: undefined or null gets the default cap', async () => {
+  await ask(ownSettings(), { maxTokens: undefined });
   assert.equal(created.max_tokens, 700);
+  await ask(ownSettings({ smart: true }), { maxTokens: null });
+  assert.equal(created.max_tokens, 1400);
 });
 
 // ---- 4. giving up cancels the request ----------------------------------------
@@ -169,9 +139,9 @@ test('4: the give-up timer aborts the request when it fires, after the last re-a
 
 test('4: llm.stream hands cue\'s cancel signal to the provider request', async () => {
   const controller = new AbortController();
-  await ask(publikSettings(), { imageDataUrl: IMAGE, signal: controller.signal });
+  await ask(ownSettings(), { imageDataUrl: IMAGE, signal: controller.signal });
   assert.equal(options && options.signal, controller.signal);
-  await ask(publikSettings({ provider: 'openai' }), { signal: controller.signal });
+  await ask(ownSettings({ smart: true }), { signal: controller.signal });
   assert.equal(options && options.signal, controller.signal);
 });
 

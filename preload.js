@@ -13,7 +13,7 @@ contextBridge.exposeInMainWorld('cue', {
   platformInfo: () => ipcRenderer.invoke('platform:info'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   captureToggle: () => ipcRenderer.invoke('capture:toggle').catch((err) => {
-    console.error('[cue] captureToggle error', err);
+    console.error('[pue] captureToggle error', err);
     return false;
   }),
   captureState: () => ipcRenderer.invoke('capture:state'),
@@ -27,26 +27,32 @@ contextBridge.exposeInMainWorld('cue', {
   slidesState: () => ipcRenderer.invoke('slides:state'),
   slidesClear: () => ipcRenderer.invoke('slides:clear'),
   openPane: (url) => ipcRenderer.send('open-pane', url),
-  publikState: () => ipcRenderer.invoke('publik:state'),
-  publikAcceptDisclosure: () => ipcRenderer.invoke('publik:accept-disclosure'),
-  publikReconnect: () => ipcRenderer.invoke('publik:reconnect'),
-  publikRefresh: () => ipcRenderer.invoke('publik:refresh'),
-  publikDisconnect: () => ipcRenderer.invoke('publik:disconnect'),
-  publikCardSeen: () => ipcRenderer.invoke('publik:card-seen'),
-  publikOpen: (url) => ipcRenderer.send('publik:open', url),
-  appLinkState: () => ipcRenderer.invoke('applink:state'),
-  appLinkRevoke: (callerId) => ipcRenderer.invoke('applink:revoke', callerId),
-  appLinkConsentRespond: (id, allowed) => ipcRenderer.send('applink:consent-response', { id, allowed }),
   pickProfileDocument: () => ipcRenderer.invoke('profile:pickDocument'),
   quit: () => ipcRenderer.send('app:quit'),
-  updatesCheck: () => ipcRenderer.send('updates:check'),
-  updatesRespond: (id, response) => ipcRenderer.send('updates:response', { id, response }),
   permissionsCheck: () => ipcRenderer.invoke('permissions:check'),
   permissionsRequest: () => ipcRenderer.invoke('permissions:request'),
   permissionsContinue: () => ipcRenderer.send('permissions:continue'),
   log: (msg) => ipcRenderer.send('log', msg),
   on: (channel, cb) => {
-    const allowed = ['capture:state', 'llm:start', 'llm:thinking', 'llm:token', 'llm:done', 'llm:error', 'status', 'transcript', 'transcript:restore', 'stt:interim', 'stt:final', 'stt:status', 'vad:state', 'applink:consent-request', 'hide:toggle', 'whisper:download-progress', 'whisper:models-changed', 'publik:state', 'slides:update', 'updates:message'];
+    const allowed = [
+      'capture:state',
+      'llm:start',
+      'llm:thinking',
+      'llm:token',
+      'llm:done',
+      'llm:error',
+      'status',
+      'transcript',
+      'transcript:restore',
+      'stt:interim',
+      'stt:final',
+      'stt:status',
+      'vad:state',
+      'hide:toggle',
+      'whisper:download-progress',
+      'whisper:models-changed',
+      'slides:update'
+    ];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));
   }

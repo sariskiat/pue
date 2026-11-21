@@ -47,8 +47,8 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 ### Phase 1: Foundation (`core-byok-fork`)
 - [x] Task 1: Seed `pue` from `cue` and remove standalone `publik`, `updater`, and `applink` files (`SPEC-core-byok-fork.md`)
 - [x] Task 2: Strip `publik` from `store.js`, `llm.js`, and `stt.js` and add legacy migration seed (`SPEC-core-byok-fork.md`)
-- [ ] Task 3: Strip `publik`, `updates`, and `applink` from `main.js`, `preload.js`, and `renderer/` (`SPEC-core-byok-fork.md`)
-- [ ] Checkpoint 1: Clean BYOK fork boots and passes `npm test` + `node verify.js`
+- [x] Task 3: Strip `publik`, `updates`, and `applink` from `main.js`, `preload.js`, and `renderer/` (`SPEC-core-byok-fork.md`)
+- [x] Checkpoint 1: Clean BYOK fork boots and passes `npm test` + `node verify.js`
 
 ### Phase 2: Global Profile & Repo Index (`profile-repo-index`)
 - [ ] Task 4: Build document extractor, unified chunker, and hybrid RRF scorer in `src/repo-indexer.js` (`SPEC-profile-repo-index.md`)

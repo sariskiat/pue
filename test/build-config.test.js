@@ -35,12 +35,7 @@ test('mac config never auto-publishes and only claims hardened runtime / notariz
     delete process.env.APPLE_TEAM_ID;
     const unsigned = require('../electron-builder.cjs');
 
-    // The only publish entry is the "generic" update feed: electron-builder
-    // never uploads to a generic provider, which is what stops it
-    // auto-publishing an ad-hoc build over a real release asset just because
-    // GH_TOKEN is set (it used to be publish:null; the self-updater needs the
-    // feed URL in the app, docs/updates.md).
-    assert.deepEqual(unsigned.publish, { provider: 'generic', url: 'https://publikhq.com/api/updates/cue/' });
+    assert.equal(unsigned.publish, null);
     // No cert -> must not claim hardened runtime or notarization (would
     // otherwise fail the build outright, or worse, silently no-op).
     assert.equal(unsigned.mac.identity, null);
@@ -75,35 +70,4 @@ test('mac config ships the zip target with entitlements files that exist on disk
   // silently, with no error, which is indistinguishable from a code bug.
   const entitlementsXml = fs.readFileSync(path.join(root, builder.mac.entitlements), 'utf8');
   assert.match(entitlementsXml, /com\.apple\.security\.device\.audio-input/);
-});
-
-// ---- publik API app token (packaged-build default) --------------------------
-
-test('the committed src/publik-build.json carries an EMPTY app token and the production base URL', () => {
-  const cfg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'publik-build.json'), 'utf8'));
-  assert.equal(cfg.appToken, '', 'a real app token must never be committed — release.yml embeds it');
-  assert.equal(cfg.appSlug, 'cue');
-  assert.equal(cfg.baseUrl, 'https://publikhq.com/api/v1');
-  assert.ok(Number.isInteger(cfg.disclosureVersion) && cfg.disclosureVersion >= 1);
-});
-
-test('release.yml embeds PUBLIK_APP_TOKEN (failing closed) before every dist step; ci.yml never needs it', () => {
-  const release = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'release.yml'), 'utf8');
-  const embedAt = release.indexOf('name: Embed publik app token');
-  assert.ok(embedAt > 0, 'release.yml has the embed step');
-  assert.match(release, /PUBLIK_APP_TOKEN: \$\{\{ secrets\.PUBLIK_APP_TOKEN \}\}/);
-  assert.match(release, /test -n "\$PUBLIK_APP_TOKEN" \|\| \{[^}]*exit 1/);
-  for (const m of release.matchAll(/run: npm run dist/g)) {
-    assert.ok(m.index > embedAt, 'the embed step precedes every npm run dist');
-  }
-  const ci = fs.readFileSync(path.join(__dirname, '..', '.github', 'workflows', 'ci.yml'), 'utf8');
-  assert.doesNotMatch(ci, /PUBLIK_APP_TOKEN/, 'PR builds from forks must not need a secret');
-});
-
-test('the publik files ship: they live under src/, which the files allowlist packages', () => {
-  delete require.cache[require.resolve('../electron-builder.cjs')];
-  const builder = require('../electron-builder.cjs');
-  assert.ok(builder.files.includes('src/**/*'));
-  assert.ok(fs.existsSync(path.join(__dirname, '..', 'src', 'publik.js')));
-  assert.ok(fs.existsSync(path.join(__dirname, '..', 'src', 'publik-build.json')));
 });

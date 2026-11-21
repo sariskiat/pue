@@ -30,10 +30,10 @@ test('giving up closes the provider connection: the server stops streaming at on
   const port = server.address().port;
   try {
     const llm = createLLM({
-      provider: 'publik', smart: false,
-      apiKeys: { publik: 'pk_test_abcdefghijkl_abcdefghijklmnopqrstuvwxyz012345' },
-      publik: { baseUrl: `http://127.0.0.1:${port}/v1` },
-      models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' } }
+      provider: 'custom', smart: false,
+      baseUrl: `http://127.0.0.1:${port}/v1`,
+      apiKeys: { custom: 'sk-local' },
+      models: { custom: { fast: 'local-fast', smart: 'local-smart' } }
     });
     const controller = new AbortController();
     let thinkingSeen = 0;

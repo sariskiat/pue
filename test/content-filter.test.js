@@ -57,18 +57,15 @@ const RECITATION_NOTE = '\n\n(Incomplete: the AI provider stopped this answer be
 const INCOMPLETE_NOTE = '\n\n(Incomplete: the answer stopped before the model finished. Ask again to get the rest.)';
 const REFUSAL = 'The request was rejected because it was considered high risk';
 
-const PUBLIK_KEY = 'pk_test_abcdefghijkl_abcdefghijklmnopqrstuvwxyz012345';
 function publikSettings(overrides = {}) {
   return {
-    provider: 'publik', smart: false,
-    apiKeys: { publik: PUBLIK_KEY, openai: 'sk-own', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
-    publik: { baseUrl: '', claimState: 'claimed' },
+    provider: 'openai', smart: false,
+    apiKeys: { openai: 'sk-own', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
     azureEndpoint: 'https://cue-test.cognitiveservices.azure.com',
-    models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' }, openai: { fast: 'gpt-own', smart: 'gpt-own' } },
+    models: { openai: { fast: 'gpt-own', smart: 'gpt-own' } },
     ...overrides
   };
 }
-const anonymous = { baseUrl: '', claimState: 'anonymous' };
 // OpenRouter's stream shape: content deltas, then a chunk with only the
 // finish_reason (and usage).
 function text(t) { return { choices: [{ index: 0, delta: { content: t }, finish_reason: null }] }; }
@@ -150,9 +147,9 @@ test('content_filter with no text at all: the safety-filter message, not "empty 
   assert.equal(error.message, FILTER_EMPTY);
 });
 
-test('a stream that ends with no finish reason is incomplete and says so', async () => {
+test('a stream that ends with no finish reason when watchDone is enabled is incomplete and says so', async () => {
   replies = [[text('The wick draws the melted wax up')]];
-  const { result, shown } = await ask(publikSettings());
+  const { result, shown } = await ask(publikSettings(), { watchDone: true });
   assert.equal(result, 'The wick draws the melted wax up' + INCOMPLETE_NOTE);
   assert.equal(shown, result);
 });
@@ -232,42 +229,6 @@ test('Azure path: content_filter after a partial answer gets the safety-filter n
   assert.equal(result, 'Azure partial' + FILTER_NOTE);
 });
 
-// ---- one retry, only where it is cheap and safe -------------------------------
-
-test('publik-balanced refused with nothing shown (linked install): asked once more on publik-smart', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')], [text('Smart answer.'), finish('stop')]];
-  const { result, shown, retries } = await ask(publikSettings({ smart: true }));
-  assert.equal(result, 'Smart answer.');
-  assert.equal(shown, 'Smart answer.');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-smart']);
-  assert.equal(requests[1].max_tokens, 1400 + 4096);
-  assert.deepEqual(retries, [{ from: 'publik-balanced', to: 'publik-smart', finishReason: 'content_filter' }]);
-});
-
-test('a refused screenshot question (fast tier, linked) is asked once more on publik-smart with the same image', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')], [text('It is a LinkedIn profile.'), finish('stop')]];
-  const { result } = await ask(publikSettings(), { imageDataUrl: IMAGE });
-  assert.equal(result, 'It is a LinkedIn profile.');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-smart']);
-  const image = (r) => r.messages[r.messages.length - 1].content.find((p) => p.type === 'image_url').image_url.url;
-  assert.equal(image(requests[1]), IMAGE);
-});
-
-test('an unlinked install: a refused text question is asked once more on publik-fast', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')], [text('Fast answer.'), finish('stop')]];
-  const { result } = await ask(publikSettings({ smart: true, publik: anonymous }));
-  assert.equal(result, 'Fast answer.');
-  assert.deepEqual(requests.map((r) => r.model), ['publik-balanced', 'publik-fast']);
-  assert.equal(requests[1].max_tokens, 1400 + 2048);
-});
-
-test('an unlinked install: a refused screenshot question is not asked again (publik-fast cannot read it): honest message', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')]];
-  const { error } = await ask(publikSettings({ publik: anonymous }), { imageDataUrl: IMAGE });
-  assert.equal(error.message, FILTER_EMPTY);
-  assert.equal(requests.length, 1);
-});
-
 test('no retry after a partial answer was shown: the partial stays, with the note', async () => {
   replies = [[text('Half of it'), text(REFUSAL), finish('content_filter')]];
   const { result } = await ask(publikSettings({ smart: true }));
@@ -275,38 +236,14 @@ test('no retry after a partial answer was shown: the partial stays, with the not
   assert.equal(requests.length, 1);
 });
 
-test('the retry is refused too: one retry only, then the honest message', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')], [finish('content_filter')], [text('never asked'), finish('stop')]];
-  const { error } = await ask(publikSettings({ smart: true }));
-  assert.equal(error.message, FILTER_EMPTY);
-  assert.equal(requests.length, 2);
-});
-
-test('the retry fails for another reason (402): the first, honest message stands', async () => {
-  const noCredit = new Error('402 insufficient credit');
-  noCredit.status = 402;
-  noCredit.error = { type: 'insufficient_credit', message: 'Not enough credit.' };
-  replies = [[text(REFUSAL), finish('content_filter')], noCredit];
-  const { error } = await ask(publikSettings({ smart: true }));
-  assert.equal(error.message, FILTER_EMPTY);
-  assert.equal(requests.length, 2);
-});
-
-test('publik-fast refused: no retry (only publik-balanced is asked again)', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')]];
-  const { error } = await ask(publikSettings());
-  assert.equal(error.message, FILTER_EMPTY);
-  assert.deepEqual(requests.map((r) => r.model), ['publik-fast']);
-});
-
-test('an own OpenAI key refused: no retry on publik', async () => {
+test('an own OpenAI key refused: no cross-tier retry', async () => {
   replies = [[finish('content_filter')]];
   const { error } = await ask(publikSettings({ provider: 'openai', smart: true }));
   assert.equal(error.message, FILTER_EMPTY);
   assert.equal(requests.length, 1);
 });
 
-test('a length-empty publik-balanced answer is not retried (the retry is for the safety filter only)', async () => {
+test('a length-empty answer is not retried', async () => {
   replies = [[finish('length')]];
   const { error } = await ask(publikSettings({ smart: true }));
   assert.equal(error.message, LENGTH_EMPTY_MESSAGE);
@@ -382,11 +319,11 @@ test('slide caption: a refused partial caption keeps its text, ends with "…", 
   assert.equal(shown, '');
 });
 
-test('slide caption: a refusal-only caption fails (no caption is stored), after one retry on a linked install', async () => {
-  replies = [[text(REFUSAL), finish('content_filter')], [text(REFUSAL), finish('content_filter')]];
+test('slide caption: a refusal-only caption fails (no caption is stored)', async () => {
+  replies = [[text(REFUSAL), finish('content_filter')]];
   const { error } = await ask(publikSettings(), { imageDataUrl: IMAGE, maxTokens: 300, lengthCut: 'ellipsis' });
   assert.equal(error.message, FILTER_EMPTY);
-  assert.equal(requests.length, 2);
+  assert.equal(requests.length, 1);
 });
 
 function notesHarness(settings) {
@@ -403,8 +340,7 @@ function notesHarness(settings) {
 
 test('meeting notes: a refusal-only answer stores no notes and no refusal title', async () => {
   replies = [[text(REFUSAL), finish('content_filter')]];
-  const { store, memory, cleanup } = notesHarness(publikSettings({ smart: true, publik: anonymous, models: { publik: { fast: 'publik-fast', smart: 'publik-balanced' } } }));
-  replies.push([finish('content_filter')]); // the one retry (publik-fast) is refused too
+  const { store, memory, cleanup } = notesHarness(publikSettings({ smart: true }));
   try {
     const notes = await memory.refreshNotes();
     assert.equal(notes, null);

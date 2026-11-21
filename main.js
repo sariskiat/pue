@@ -6,7 +6,6 @@ const crypto = require('crypto');
 const store = require('./src/store');
 const { captureScreenshot } = require('./src/screen');
 const { createSTT } = require('./src/stt');
-const { UtteranceBatcher, DEFAULT_MIN_GAP_MS } = require('./src/publik-stt-batcher');
 const { parseDocumentFile } = require('./src/resume');
 const { createLLM, normalizeProviderName } = require('./src/llm');
 const { giveUpTimer } = require('./src/give-up');
@@ -16,23 +15,12 @@ const { rms16 } = require('./src/wav');
 const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
-const { startAppLink, stopAppLink, recordEvent, appLinkConsentState, revokeAppLinkCaller } = require('./src/applink');
-const publik = require('./src/publik-ui');
-// The one publik module (src/publik.js): the sign-in gate at start-up, this
-// computer's key, GET /wallet and usage telemetry. Only this process holds
-// the key. The gate window is src/publik-gate.js.
-const publikModule = require('./src/publik');
-const { electronGateUI } = require('./src/publik-gate');
-// Signed self-updates from publik's update feed (publik-updater.cjs, docs/updates.md).
-const { startUpdates } = require('./publik-updater.cjs');
-// What this build can do: `available` is true when the build carries a publik
-// app token (release.yml bakes it into src/publik-build.json; PUBLIK_APP_TOKEN
-// in the environment also counts) or PUBLIK_API_KEY is set for development.
-const publikBuild = {
-  available: publikModule.hasAppToken() || !!process.env.PUBLIK_API_KEY,
-  baseUrl: publikModule.DEFAULT_BASE_URL,
-  disclosureVersion: 1
-};
+
+function recordEvent(ev) {
+  if (ev && (ev.level === 'error' || ev.level === 'fatal')) {
+    console.error('[pue]', ev.event, ev.msg || '');
+  }
+}
 const { createMeetingStore } = require('./src/meetings');
 const { createMeetingMemory } = require('./src/meeting-memory');
 const {
@@ -115,8 +103,8 @@ let permWin = null;
 // below), so launchApp() can already have run once by the time the user grants
 // access and clicks Continue in the gate window (permissions:continue also
 // calls launchApp()). Without this guard the second call re-creates the main
-// BrowserWindow (createWindow() has no existing-window check), re-registers
-// global shortcuts and re-starts the applink server -- a real, reachable
+// BrowserWindow (createWindow() has no existing-window check) and re-registers
+// global shortcuts -- a real, reachable
 // regression, not a hypothetical.
 let appLaunched = false;
 
@@ -124,15 +112,11 @@ let appLaunched = false;
 const state = { capturing: false, busy: false, transcribing: { you: false, them: false } };
 let sttDisabled = false; // set when the key can't reach any speech model (stops retry spam)
 const buffers = { you: [], them: [] };
-const publikSttBatchers = { you: new UtteranceBatcher(), them: new UtteranceBatcher() };
 const sttInFlight = { you: Promise.resolve(null), them: Promise.resolve(null) }; // the channel's transcription request, if any
 let sttSession = 0; // one per listening session; a piece only ever joins the session it was heard in
-let stopFlush = null; // the stop flush still running: { session, cancelled }
-const STOP_FLUSH_MS = 40000; // the stop flush starts no request after this
 const lastSttText = { you: '', them: '' }; // the channel's latest text, whisper context for a piece after a cut
 let sttSessionShown = false; // the current session has shown text (an old session's late text then waits no more)
 const NEW_SESSION_FIRST = { message: 'a new session started first' };
-let publikSttNoticeAt = 0; // last "not transcribed" notice for a lost piece (passing publik error)
 const transcript = []; // { channel, text, ts } — capped at MAX_TRANSCRIPT_TURNS
 const MAX_TRANSCRIPT_TURNS = 200; // ~30–40 minutes of conversation at normal pace
 let meetingMemory = null; // persists the transcript per meeting + notes; see src/meeting-memory.js
@@ -407,135 +391,32 @@ function createWindow() {
 }
 
 // -------- STT flushing (batch mode fallback) --------
-// Said once when listening has no transcription path at all. With publik
-// selected and connected, src/stt.js transcribes through publik API, so this
-// only shows when publik is not set up (or its key was revoked) or another
-// provider without an audio key is selected.
-function noTranscriptionMessage(settings) {
-  const tail = 'Screen and coding features work without it.';
-  if (settings.provider === publik.PUBLIK_PROVIDER) {
-    return `Listening needs publik API to be connected. Set it up or press Reconnect in Settings, or choose Local transcription. ${tail}`;
-  }
-  // publik first: it transcribes with no key of the person's own.
-  if (publikBuild.available) {
-    return `Transcription is off. Switch to publik in Settings to transcribe with no API key. You can also pick Local in Settings › Audio, or add an OpenAI or Groq key. ${tail}`;
-  }
-  return `Transcription is off. Pick Local in Settings › Audio to transcribe on this computer with no key, or add an OpenAI or Groq key. ${tail}`;
+function noTranscriptionMessage() {
+  return 'Transcription is off. Pick Local in Settings > Audio to transcribe on this computer with no key, or add an OpenAI or Groq key. Screen and coding features work without it.';
 }
 
 async function flushChannel(channel) {
-  const busy = state.transcribing[channel];
+  if (state.transcribing[channel]) return;
   const settings = store.getSettings();
   const stt = createSTT(settings);
-  const viaPublik = stt.providers[0] === publik.PUBLIK_PROVIDER;
-  // Another provider: the audio waits in the buffer while a request is in
-  // flight and goes out with the next window.
-  if (busy && !viaPublik) return;
   const chunks = buffers[channel];
   buffers[channel] = [];
   const windowPcm = chunks.length ? Buffer.concat(chunks) : null;
-  // silence gate: a window that is too short or too quiet is not speech
-  const voiced = windowPcm && windowPcm.length >= MIN_BYTES && rms16(windowPcm) >= RMS_GATE ? windowPcm : null;
-  let pcm = voiced;
-  if (viaPublik) {
-    // publik API: whole utterances cut at pauses, so two busy channels stay
-    // under the key's 60 requests a minute and a question is never cut inside
-    // a word; a sentence reaches whisper within about 10 s of its end
-    // (src/publik-stt-batcher.js). The batcher gets the raw window, pauses
-    // included: it finds them in 30 ms frames. While this channel's request
-    // is in flight, the window still goes in (each pause is found where it
-    // is), and nothing is sent: a piece after a pause waits for its own
-    // request (0.2.12 smoke: "No." after a 2 s pause was joined to the
-    // sentence before it while a slow request ran, and whisper dropped it).
-    if (busy) { publikSttBatchers[channel].feed(windowPcm); return; }
-    pcm = publikSttBatchers[channel].push(windowPcm);
-  } else {
-    publikSttBatchers[channel].reset();
-  }
+  const pcm = windowPcm && windowPcm.length >= MIN_BYTES && rms16(windowPcm) >= RMS_GATE ? windowPcm : null;
   if (!pcm) return;
-  // After publik refused for good (balance used up, a refused request), do
-  // not send every utterance again; listening resumes on the next start or
-  // a Settings save, which clear sttDisabled.
-  if (sttDisabled && stt.providers[0] === publik.PUBLIK_PROVIDER) return;
-
-  const session = sttSession;
-  // A piece that starts at a cut goes with the text before it, so whisper
-  // reads its first words in context (src/stt.js promptWithContext).
-  const context = publikSttBatchers[channel].continuesCut(pcm) ? lastSttText[channel] : '';
-  const failed = await transcribePiece(channel, pcm, settings, stt, { context, session });
-  if (!failed || failed.stale) return;
-  // Stopped while it was in flight: the stop flush gives it its one more try.
-  if (session !== sttSession || !state.capturing) return;
-  failed.handled = true;
-  // A passing publik failure: the batcher sends the piece once more, first
-  // in line, after the delay; a second failure is final, and said.
-  if (!publikSttBatchers[channel].retry(pcm, failed.delayMs)) reportLostAudio(pcm, failed.error);
+  await transcribePiece(channel, pcm, settings, stt, { session: sttSession });
 }
 
-// publik API: busy (429), a server error, or no answer in time (no status)
-// is passing; anything else (balance used up, key revoked) is not.
-function isPassingSttError(err) {
-  return Boolean(err) && (err.status === 429 || !err.status || err.status >= 500);
-}
-
-// The wait before the one more try: the gateway's Retry-After (2.5 s to
-// 20 s), else 5 s after a 429 (the key allows 60 requests a minute, chat
-// included), else the channel's 2.5 s spacing (a 5xx or a timeout).
-function sttRetryDelayMs(err) {
-  if (err && err.retryAfterMs > 0) return Math.min(Math.max(err.retryAfterMs, DEFAULT_MIN_GAP_MS), 20000);
-  return err && err.status === 429 ? 5000 : DEFAULT_MIN_GAP_MS;
-}
-
-// Why a piece was lost, as part of a sentence. Not the error's own message:
-// a 429 says "Wait 2 seconds and try again", which does not apply to audio
-// that is gone (0.2.12 smoke).
-function lostAudioReason(err) {
-  if (!err) return '';
-  if (err === NEW_SESSION_FIRST) return 'a new session started first';
-  if (err.status === 429) return 'publik API was busy';
-  if (err.status >= 500) return 'publik API had a server error';
-  if (!err.status) return 'publik API did not answer in time';
-  return String(err.message || '').trim().replace(/[\s.!]+$/, '');
-}
-
-// "N s of the meeting were not transcribed": a piece lost after its one
-// more try. In a session at most once a minute; at Stop always.
-function lostAudioMessage(bytes, err, atStop) {
-  const secs = Math.max(1, Math.round(bytes / 32000));
-  const reason = lostAudioReason(err);
-  const why = reason ? ` because ${reason}` : '';
-  return atStop
-    ? `The last ${secs} s before Stop were not transcribed${why}.`
-    : `${secs} s of the meeting were not transcribed${why}. Listening goes on.`;
-}
-
-function reportLostAudio(pcm, err) {
-  recordEvent({ level: 'error', event: 'stt_lost', code: err && (err.code || (err.status ? 'http_' + err.status : null)), msg: err && err.message, frame: 'reportLostAudio', context: { bytes: pcm ? pcm.length : 0 } });
-  const now = Date.now();
-  if (now - publikSttNoticeAt <= 60000) return;
-  publikSttNoticeAt = now;
-  send('status', { message: lostAudioMessage(pcm ? pcm.length : 0, err, false) });
-}
-
-// Transcribes one piece for a channel and publishes its text. A passing
-// publik failure is not reported here: it comes back as
-// { error, delayMs, pcm, session, context } for the caller to try once more.
-// Text for a session that already ended while a newer one runs is never
-// published: it comes back as { stale } (nothing from an old session joins
-// a new one).
 function transcribePiece(channel, pcm, settings, stt, { context = '', session = sttSession } = {}) {
   const run = (async () => {
     state.transcribing[channel] = true;
     try {
       if (!stt.available) {
-        if (!sttDisabled) { sttDisabled = true; send('status', { message: noTranscriptionMessage(settings) }); }
+        if (!sttDisabled) { sttDisabled = true; send('status', { message: noTranscriptionMessage() }); }
         return null;
       }
       const res = await stt.transcribe(pcm, { context });
       if (session !== sttSession) {
-        // Stop, then Start before this text came back: the text is the old
-        // session's last words. Shown (and in the notes) while the new
-        // session has shown nothing, so the order holds; else said as lost.
         const text = !res.error && res.text ? res.text.trim() : '';
         if (text.length > 1 && !sttSessionShown && !/^[?!.,;:\-…]+$/.test(text)) {
           const turn = { channel, text, ts: Date.now() };
@@ -546,10 +427,7 @@ function transcribePiece(channel, pcm, settings, stt, { context = '', session = 
         return { stale: true, pcm, session, error: res.error || (text ? NEW_SESSION_FIRST : null) };
       }
       if (res.error) {
-        if (res.error.provider === publik.PUBLIK_PROVIDER && isPassingSttError(res.error)) {
-          return { error: res.error, delayMs: sttRetryDelayMs(res.error), pcm, session, context };
-        }
-        handleSttError(res.error, settings);
+        handleSttError(res.error);
         return null;
       }
       if (res.text && res.text.trim() && res.text.trim().length > 1 && !/^[?!.,;:\-…]+$/.test(res.text.trim())) {
@@ -572,11 +450,6 @@ function transcribePiece(channel, pcm, settings, stt, { context = '', session = 
   return run;
 }
 
-// The meeting notes after a Stop. They wait for the last words, so they hold
-// them. "Meeting notes saved (N turns)." is said once, for the last Stop,
-// with the turns those notes were written from (0.2.12 smoke: Stop, Start
-// and Stop again within 5 s said "(13 turns)" twice, for notes that did not
-// hold the last turn).
 let notesStatusFor = 0;
 function notesAfterStop(memory, lastWords) {
   const stop = ++notesStatusFor;
@@ -585,126 +458,27 @@ function notesAfterStop(memory, lastWords) {
   }).catch(() => {});
 }
 
-// A new listening session: nothing held, waiting for a retry or still in
-// the stop flush of the last session joins it (a piece that failed after
-// Stop came back as the first request of the next session, verify of eee01af).
 function startSttSession() {
   sttSession++;
-  if (stopFlush) stopFlush.cancelled = true;
   buffers.you = []; buffers.them = [];
-  publikSttBatchers.you.reset(); publikSttBatchers.them.reset();
   lastSttText.you = ''; lastSttText.them = '';
   sttSessionShown = false;
 }
 
-// The session stopped: what the publik batchers still hold (the sentence
-// being spoken at that moment, and audio that arrived since the last flush)
-// is taken now, before the buffers are cleared.
-function takeHeldAudio() {
-  const settings = store.getSettings();
-  const stt = createSTT(settings);
-  if (stt.providers[0] !== publik.PUBLIK_PROVIDER || sttDisabled) return null;
-  const pieces = {};
-  for (const channel of ['you', 'them']) {
-    const batcher = publikSttBatchers[channel];
-    const rest = buffers[channel].length ? Buffer.concat(buffers[channel]) : null;
-    buffers[channel] = [];
-    // A retry already waiting keeps what is left of its delay (Retry-After),
-    // at least the channel's 2.5 s spacing (verify of ba8a0fe: Retry-After
-    // 15 s, sent 3 s after the 429 at Stop).
-    const now = Date.now();
-    pieces[channel] = batcher.flush(rest).map((pcm) => ({
-      pcm,
-      tried: batcher.wasRetried(pcm) ? 1 : 0,
-      delayMs: Math.max(DEFAULT_MIN_GAP_MS, batcher.retryDueAt(pcm) - now),
-      continues: batcher.continuesCut(pcm)
-    }));
-  }
-  return { session: sttSession, pieces };
-}
-
-// The stop flush. Per channel, in order: the request in flight at Stop
-// (when it fails, it gets its one more try here, not in the next session),
-// then the held pieces. A passing failure is tried once more after
-// sttRetryDelayMs (Retry-After honored up to 20 s), and the next request on
-// the channel waits as long. Each try gets a fresh transcriber, so its 30 s
-// local back-off never blocks the last words. Bounded by STOP_FLUSH_MS, and
-// ended by a new Start. Words lost in the end are named in a notice; the
-// meeting notes are written after this.
-async function sendHeldAudio(held) {
-  if (!held) return;
-  const flush = { session: held.session, cancelled: false };
-  stopFlush = flush;
-  const until = Date.now() + STOP_FLUSH_MS;
-  let lostBytes = 0;
-  let lastErr = null;
-  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-  await Promise.all(['you', 'them'].map(async (channel) => {
-    const queue = [];
-    let notBefore = 0;
-    const inFlight = await sttInFlight[channel];
-    if (inFlight && inFlight.session === held.session && inFlight.pcm && !inFlight.handled) {
-      if (inFlight.stale) { if (inFlight.error) { lostBytes += inFlight.pcm.length; lastErr = inFlight.error; } } // no error: no words in it
-      else if (inFlight.error) {
-        queue.push({ pcm: inFlight.pcm, tried: publikSttBatchers[channel].wasRetried(inFlight.pcm) ? 2 : 1, error: inFlight.error, delayMs: inFlight.delayMs, context: inFlight.context });
-        notBefore = Date.now() + inFlight.delayMs;
-      }
-    }
-    queue.push(...held.pieces[channel]);
-    for (const item of queue) {
-      let done = false;
-      while (!done && item.tried < 2 && !flush.cancelled) {
-        const wait = Math.max(notBefore, item.tried ? Date.now() + item.delayMs : 0) - Date.now();
-        if (wait > 0) {
-          if (Date.now() + wait > until) break;
-          await sleep(wait);
-        }
-        if (flush.cancelled || Date.now() > until) break;
-        const settings = store.getSettings();
-        const context = item.context != null ? item.context : (item.continues ? lastSttText[channel] : '');
-        const res = await transcribePiece(channel, item.pcm, settings, createSTT(settings), { context, session: held.session });
-        item.tried++;
-        if (!res) done = true; // transcribed, or a lasting error already said
-        else if (res.stale) { if (res.error) item.error = res.error; else done = true; break; }
-        else { item.error = res.error; item.delayMs = res.delayMs; notBefore = Date.now() + res.delayMs; }
-      }
-      if (!done) { lostBytes += item.pcm.length; lastErr = item.error || lastErr || (flush.cancelled ? NEW_SESSION_FIRST : null); }
-    }
-  }));
-  if (stopFlush === flush) stopFlush = null;
-  if (lostBytes) send('status', { message: lostAudioMessage(lostBytes, lastErr, true) });
-}
-
-function handleSttError(err, settings) {
+function handleSttError(err) {
   console.log('[stt] error', err.provider, err.status, err.code, err.message);
-  // Recorded before the early return, because the second and hundredth
-  // occurrence still tell you the state cue is stuck in.
   recordEvent({
     level: 'error',
     event: 'stt_rejected',
     code: err.code || (err.status ? 'http_' + err.status : null),
     msg: err.message,
     frame: 'handleSttError',
-    context: { provider: err.provider, status: err.status || null, alreadyDisabled: sttDisabled },
+    context: { provider: err.provider, status: err.status || null, alreadyDisabled: sttDisabled }
   });
   if (sttDisabled) return;
-  if (err.provider === publik.PUBLIK_PROVIDER) {
-    // publik API: busy (429), unreachable (5xx, network) or a timeout is
-    // passing (after its one more try): say what was lost, at most once a
-    // minute, and keep listening. Anything
-    // else (balance used up, key revoked, a refused request) stops
-    // transcription with the gateway's own sentence and its one button --
-    // "update your key" is wrong for a key cue minted.
-    const passing = isPassingSttError(err);
-    if (passing) { reportLostAudio(null, err); return; }
-    sttDisabled = true;
-    send('status', { message: `Transcription stopped: ${err.message}`, action: err.action || null });
-    if (err.action) publikHandleErrorAction(err.action);
-    return;
-  }
   const isQuota = err.status === 429 || err.code === 'RESOURCE_EXHAUSTED' || (err.message && err.message.includes('Quota exceeded'));
   const noAccess = err.status === 403 || err.status === 401 || err.code === 'model_not_found' || isQuota;
-  sttDisabled = true; // stop hammering the API every few seconds
+  sttDisabled = true;
   if (noAccess) {
     send('status', { message: `Transcription off: your ${err.provider} key was rejected or hit a quota limit. Update your key in Settings to resume.` });
   } else {
@@ -1013,17 +787,12 @@ async function setCapturing(active) {
   state.capturing = false;
   stopFlushLoop();
   stopStreamingSTT();
-  // The last words before the stop go out as final pieces, not dropped.
-  const lastWords = sendHeldAudio(takeHeldAudio()).catch(() => {});
+  const lastWords = Promise.all([sttInFlight.you, sttInFlight.them]).catch(() => {});
   if (meetingMemory) {
-    // Write/refresh the notes for this meeting in the background so the
-    // summary survives even if cue is closed before the meeting formally ends.
-    // They wait for the last words, so the notes hold them too.
     notesAfterStop(meetingMemory, lastWords);
   }
   stopSlideLoop();
   buffers.you = []; buffers.them = [];
-  publikSttBatchers.you.reset(); publikSttBatchers.them.reset();
   vad.you.reset(); vad.them.reset();
   ringBuffers.you.clear(); ringBuffers.them.clear();
   const stoppingLocalTranscriber = localWhisperTranscriber;
@@ -1060,29 +829,7 @@ async function runFeature(mode, userText) {
 
     if (!llm.ready) {
       const message = llm.configurationError || ('Complete the ' + settings.provider + ' provider settings. Model: ' + (llm.model || 'unset') + '.');
-      if (settings.provider === publik.PUBLIK_PROVIDER) {
-        // No key yet: either the disclosure was never accepted (open it — the
-        // mint happens only on "Sign in with publik"), or the install was
-        // revoked or the last mint failed (offer Reconnect, and say why in
-        // plain words). The message and its one button always agree. The app
-        // never silently spends.
-        send('llm:error', publik.notReadyMessage(publikState()));
-        return;
-      }
-      // An own provider with no key, in a build that has publik: publik
-      // first, the provider's proper name, one button that switches.
-      send('llm:error', publikBuild.available
-        ? { message: publik.ownProviderNotReadyMessage({ providerName: llm.providerName, missingKey: llm.missingKey, configurationError: message }), action: { kind: 'switch' } }
-        : { message });
-      return;
-    }
-    // Never a silent starter (CONTRACT §12.4): the first-run card — balance,
-    // justification, "Link this computer & pick a plan" / "Later" — is shown
-    // at least once before any starter usage is spent. Normally it appears
-    // right after provisioning; this gate catches a card that was never
-    // acknowledged (e.g. an install provisioned by an earlier release).
-    if (settings.provider === publik.PUBLIK_PROVIDER && settings.apiKeys.publik && !settings.publik.cardShown) {
-      send('llm:error', { message: 'publik API is set up. Take a look at the card, then ask again.', action: { kind: 'card' } });
+      send('llm:error', { message });
       return;
     }
 
@@ -1154,9 +901,6 @@ async function runFeature(mode, userText) {
           onToken: (t) => { if (streamSettled) return; answerStarted = true; rearm(); send('llm:token', { text: t }); },
           onActivity: noteActivity,
           signal: guard.signal,
-          onResponse: settings.provider === publik.PUBLIK_PROVIDER ? (res) => publikNoteHeaders(res && res.headers) : undefined,
-          // A publik-balanced answer that the safety filter stopped before any
-          // text showed is asked once more on another publik tier (src/llm.js).
           onRetry: (r) => recordEvent({ level: 'info', event: 'llm_filter_retry', msg: `${r.from} -> ${r.to}`, frame: 'runFeature', context: { mode, from: r.from, to: r.to, finishReason: r.finishReason } })
         }),
         guard.expired
@@ -1166,23 +910,15 @@ async function runFeature(mode, userText) {
       guard.clear();
     }
     send('llm:done', {});
-    // The own key answered: it is not bad (any more).
     clearOwnKeyFailed(settings.provider);
-    // Streams settle after their headers, so the charge is reconciled from
-    // GET /wallet shortly after the answer — one request per answer, debounced.
-    if (settings.provider === publik.PUBLIK_PROVIDER) publikScheduleWalletRefresh();
   } catch (e) {
     recordEvent({ level: 'error', event: e && e.emptyAnswer ? 'llm_empty_answer' : 'llm_failed', msg: e && e.message ? e.message : String(e), frame: 'runFeature', context: { mode, provider: store.getSettings().provider, finishReason: (e && e.finishReason) || null, stopKind: (e && e.stopKind) || null, retryFailed: (e && e.retryFailed) || null } });
-    // A bad own key: plain words, "Switch to publik" first, "Fix my key"
-    // second; never the provider's raw 401.
     if (e && e.ownKeyFailed) {
       markOwnKeyFailed(e.ownKeyFailed.provider);
-      send('llm:error', publik.ownKeyFailedMessage({ providerName: e.ownKeyFailed.providerName, publikAvailable: publikBuild.available }));
+      send('llm:error', { message: `Your ${e.ownKeyFailed.providerName} key did not work. Open Settings to update your key.` });
       return;
     }
-    const action = e && e.action ? e.action : null;
-    send('llm:error', { message: e && e.message ? e.message : String(e), action });
-    if (action) publikHandleErrorAction(action);
+    send('llm:error', { message: e && e.message ? e.message : String(e) });
   } finally {
     streamSettled = true;
     state.busy = false;
@@ -1190,8 +926,6 @@ async function runFeature(mode, userText) {
 }
 
 // -------- IPC --------
-// Redact on the way out, strip on the way in: the publik key never enters the
-// renderer, and the renderer's whole-object Save can never clobber it.
 ipcMain.handle('settings:get', () => store.redactForRenderer(store.getSettings()));
 ipcMain.handle('settings:set', (_e, patch) => {
   sttDisabled = false;
@@ -1199,31 +933,15 @@ ipcMain.handle('settings:set', (_e, patch) => {
   const beforeProvider = before.provider;
   const beforeKey = (before.apiKeys || {})[beforeProvider];
   const next = store.setSettings(store.stripRendererPatch(patch));
-  // After "Fix my key" (or another provider): a refused key that is no
-  // longer selected stops counting, and a new own key gets the same free
-  // check as at startup.
   const nextKey = (next.apiKeys || {})[next.provider];
   if (next.provider !== beforeProvider || nextKey !== beforeKey) {
-    if (ownKeyFailure && !ownKeyFailedFor(next)) { ownKeyFailure = null; publikPush(); }
+    if (ownKeyFailure && !ownKeyFailedFor(next)) ownKeyFailure = null;
     checkSelectedOwnKey();
   }
-  // Restart slide polling with the new interval when capturing (keeps slides).
   if (state.capturing) startSlideLoop();
   return store.redactForRenderer(next);
 });
 
-// -------- publik API --------
-// The sign-in gate (src/publik.js ensureSignedIn) runs before any window and
-// mints this computer's key; publikApplyGate copies it into apiKeys.publik
-// when the person chose publik. The balance line is fed by the x-publik-*
-// headers on every answer and reconciled from GET /wallet.
-let publikWalletTimer = null;
-let publikProvisioning = null;
-
-// -------- a bad own key (0.2.4/0.2.5 users with a home-made OpenAI key) --------
-// In memory only: the provider and a short hash of the key it refused, never
-// the key. It counts while the same provider and key are selected, so a new
-// key or another provider clears it by itself.
 let ownKeyFailure = null;
 function ownKeyHash(key) { return crypto.createHash('sha256').update(String(key || '')).digest('hex').slice(0, 16); }
 function ownKeyFailedFor(settings) {
@@ -1234,308 +952,28 @@ function ownKeyFailedFor(settings) {
 }
 function markOwnKeyFailed(provider) {
   const key = (store.getSettings().apiKeys || {})[provider];
-  if (!key || provider === publik.PUBLIK_PROVIDER) return;
+  if (!key) return;
   ownKeyFailure = { provider, keyHash: ownKeyHash(key) };
-  publikPush();
 }
 function clearOwnKeyFailed(provider) {
   if (!ownKeyFailure || ownKeyFailure.provider !== provider) return;
   ownKeyFailure = null;
-  publikPush();
 }
 
-// Startup, no paid call: (1) a publik key that was revoked on the dashboard
-// while cue was closed shows Reconnect at once (GET /wallet marks it), not
-// "Connected" until the first question fails; (2) an own provider key is
-// checked with the provider's free "list models" call.
 function startupChecks() {
-  const s = store.getSettings();
-  if (publikBuild.available && s.apiKeys.publik && !s.publik.revoked) {
-    publikRefreshWallet().catch(() => {});
-  }
   checkSelectedOwnKey();
 }
 function checkSelectedOwnKey() {
   const s = store.getSettings();
   const provider = s.provider;
   const key = (s.apiKeys || {})[provider];
-  if (!provider || provider === publik.PUBLIK_PROVIDER || !key) return;
+  if (!provider || !key) return;
   checkOwnKey({ provider, apiKey: key }).then((verdict) => {
     recordEvent({ level: 'info', event: 'own_key_checked', msg: verdict, frame: 'checkSelectedOwnKey', context: { provider } });
-    // Only if the same key is still selected when the answer comes back.
     const now = store.getSettings();
     if (verdict === 'bad' && now.provider === provider && now.apiKeys[provider] === key) markOwnKeyFailed(provider);
   }).catch(() => {});
 }
-
-// The gate's answer becomes cue's publik state. The gate shows no pay screen:
-// with no stored choice it stores 'publik'. 'publik': the module's key goes
-// into apiKeys.publik and publik becomes the provider a fresh settings file
-// defaults to (launchApp); a 402 later offers a plan (describeGatewayError).
-// A stored 'own_key' (an earlier gate, or "Disconnect publik" in Settings):
-// no publik key in the settings; the settings card offers "Sign in with
-// publik" (publik:accept-disclosure), which needs no new mint because the
-// module keeps the credential.
-function publikApplyGate(gate) {
-  const c = publikModule.readCredential() || { key: gate.key, base_url: publikBuild.baseUrl, install_id: '', claim_url: null };
-  if (gate.choice === 'publik') { publikConnect({ ...c, key: gate.key }, gate.wallet); return; }
-  const w = gate.wallet ? publik.normalizeWallet(gate.wallet) : null;
-  store.setPublik({
-    apiKey: '', keyId: '', installId: c.install_id || '', baseUrl: c.base_url || publikBuild.baseUrl, claimUrl: c.claim_url || '',
-    claimState: (w && w.claimState) || 'claimed', choice: 'own_key', wallet: w, balanceMicros: w ? w.balanceMicros : null, balanceAt: Date.now(),
-    disclosureAccepted: 0, revoked: false, disconnected: false, lastError: '', lastErrorKind: '', lastErrorRetryAt: 0
-  });
-}
-
-// The module's credential becomes cue's publik key: Settings, llm.js and
-// stt.js read apiKeys.publik like every other provider key.
-function publikConnect(c, wallet) {
-  publikModule.setChoice('publik');
-  const w = wallet ? publik.normalizeWallet(wallet) : null;
-  const s = store.getSettings();
-  store.setPublik({
-    apiKey: c.key, installId: c.install_id || s.publik.installId || '', keyId: String(c.key).split('_')[2] || '',
-    baseUrl: c.base_url || publikBuild.baseUrl, claimUrl: (w && w.claimUrl) || c.claim_url || '',
-    claimState: (w && w.claimState) || s.publik.claimState || 'anonymous', choice: 'publik',
-    wallet: w, balanceMicros: w ? w.balanceMicros : s.publik.balanceMicros, balanceAt: Date.now(),
-    // Signed in at the gate (or chose publik in the app): no first-run card.
-    disclosureAccepted: publikBuild.disclosureVersion, cardShown: true,
-    revoked: false, disconnected: false, lastError: '', lastErrorKind: '', lastErrorRetryAt: 0
-  });
-}
-
-function publikState() {
-  const s = store.getSettings();
-  const p = s.publik || {};
-  const connected = !!s.apiKeys.publik;
-  const wallet = p.wallet || null;
-  const claimState = (wallet && wallet.claimState) || p.claimState || 'anonymous';
-  const view = {
-    available: publikBuild.available,
-    selected: s.provider === publik.PUBLIK_PROVIDER,
-    connected,
-    revoked: !!p.revoked,
-    disconnected: !!p.disconnected,
-    keyId: p.keyId || '',
-    claimState,
-    claimUrl: p.claimUrl || (wallet && wallet.claimUrl) || '',
-    addCreditUrl: (wallet && wallet.addCreditUrl) || '',
-    topUpUrl: (wallet && wallet.topUpUrl) || p.claimUrl || '',
-    starterMicros: p.starterMicros || 0,
-    balanceMicros: p.balanceMicros,
-    balanceAt: p.balanceAt || 0,
-    balanceLabel: publik.formatMicros(p.balanceMicros),
-    wallet,
-    disclosureAccepted: p.disclosureAccepted || 0,
-    disclosureVersion: publikBuild.disclosureVersion,
-    // The answer to the gate's plan screen: 'publik' | 'own_key' | ''.
-    choice: p.choice || '',
-    lastError: p.lastError || '',
-    // The failure in plain words (never "fetch failed"); the raw text stays in lastError.
-    problem: publik.plainProblem(p),
-    // True when the last mint failed (offline, rate limited, server error),
-    // as opposed to a gateway sentence such as a revoke. A failed Reconnect
-    // also sets `revoked`, and the failure is still the thing to say.
-    setupFailed: !!(p.lastError && p.lastErrorKind),
-    // An own provider refused its key (on a question or at startup):
-    // { provider, providerName } or null. Drives "Switch to publik" first.
-    ownKeyFailed: ownKeyFailedFor(s),
-    cardShown: !!p.cardShown,
-    copy: publik.COPY,
-    links: publik.LINKS
-  };
-  view.line = publik.balanceLine(view);
-  // The status sentence on the settings card (the gateway's last answer wins
-  // over the fixed revoked/disconnected copy), computed here so the renderer
-  // only paints.
-  view.status = publik.statusLine(view);
-  // CONTRACT §12: the first-run card (shown while connected && !cardShown),
-  // the settings button, and the low-starter banner — all computed here so
-  // the renderer only paints.
-  view.card = publik.ctaView(view);
-  view.settingsCta = publik.settingsCta(view);
-  view.lowStarter = publik.lowStarterNotice(view);
-  return view;
-}
-function publikPush() { send('publik:state', publikState()); }
-
-// A new key from publik (Reconnect, a silent re-mint): the module's
-// provision() keeps this computer's install_id, and the new key is read back
-// with GET /wallet before it is stored. A key the gateway still refuses (401)
-// drops the credential file and mints once more.
-async function publikProvision() {
-  if (publikProvisioning) return publikProvisioning;
-  publikProvisioning = (async () => {
-    try {
-      let c = await publikModule.provision();
-      let r = await publikModule.readWallet(c.key);
-      if (r.status === 401) {
-        fs.rmSync(publikModule.credentialPath(), { force: true });
-        c = await publikModule.provision();
-        r = await publikModule.readWallet(c.key);
-      }
-      if (r.status === 401) throw Object.assign(new Error(r.message || 'publik did not accept the new key.'), { status: 401 });
-      publikConnect(c, r.wallet);
-      recordEvent({ level: 'info', event: 'publik_provisioned', msg: String(c.key).split('_')[2] || '', frame: 'publikProvision', context: {} });
-    } catch (e) {
-      // Offline or a status: the plain-words kinds. A sentence from the module
-      // (no token, a gateway refusal) is shown as it is.
-      const offline = e instanceof TypeError || /abort|timeout/i.test(String(e && e.name));
-      const fields = offline || (e && e.status) ? publik.failureFields(e) : { lastErrorKind: 'gateway', lastErrorStatus: 0, lastErrorRetryAt: 0 };
-      store.setPublik({ lastError: e.message, ...fields });
-      recordEvent({ level: 'error', event: 'publik_provision_failed', msg: e.message, frame: 'publikProvision', context: { status: (e && e.status) || null } });
-    }
-    publikPush();
-    return publikState();
-  })().finally(() => { publikProvisioning = null; });
-  return publikProvisioning;
-}
-
-// One press reconnects: a wallet read that finds the key revoked goes on to
-// mint in the same press. Before consent nothing happens: only "Sign in with
-// publik" (publik:accept-disclosure) connects.
-async function publikReconnect() {
-  const s = store.getSettings();
-  if (!s.publik.disclosureAccepted) return publikState();
-  if (s.apiKeys.publik && !s.publik.revoked) {
-    const after = await publikRefreshWallet();
-    if (!after || !after.revoked) return after;
-  }
-  store.setPublik({ revoked: true });
-  return publikProvision();
-}
-
-// x-publik-* headers from a streamed answer: the balance after admission
-// (the hold is included), the claim state, the week. Settlement follows.
-function publikNoteHeaders(headers) {
-  const h = publik.readGatewayHeaders(headers);
-  if (!h) return;
-  const s = store.getSettings();
-  const wallet = { ...(s.publik.wallet || {}) };
-  if (h.balanceMicros !== null) wallet.balanceMicros = h.balanceMicros;
-  if (h.claimState) wallet.claimState = h.claimState;
-  if (h.weekUsedMicros !== null) wallet.weekUsedMicros = h.weekUsedMicros;
-  if (h.weekBudgetMicros !== null || h.weekResetsAt) wallet.weekBudgetMicros = h.weekBudgetMicros;
-  if (h.weekResetsAt) wallet.weekResetsAt = h.weekResetsAt;
-  if (h.starterRemainingMicros !== null) wallet.starterRemainingMicros = h.starterRemainingMicros;
-  store.setPublik({
-    balanceMicros: h.balanceMicros !== null ? h.balanceMicros : s.publik.balanceMicros,
-    balanceAt: Date.now(),
-    claimState: h.claimState || s.publik.claimState,
-    wallet,
-    revoked: false
-  });
-  publikPush();
-}
-
-async function publikRefreshWallet() {
-  const s = store.getSettings();
-  if (!s.apiKeys.publik) return publikState();
-  try {
-    // src/publik.js readWallet: { status, wallet, message }; a 401 is a null wallet.
-    const r = await publikModule.readWallet(s.apiKeys.publik);
-    if (r.status === 401) {
-      publikHandleRevoked({ type: 'key_revoked', reprovision: false, status: 401 });
-    } else if (!r.wallet) {
-      recordEvent({ level: 'warn', event: 'publik_wallet_failed', msg: r.message || `GET /wallet answered ${r.status}`, frame: 'publikRefreshWallet', context: { status: r.status } });
-    } else {
-      const w = publik.normalizeWallet(r.wallet);
-      store.setPublik({
-        wallet: w, balanceMicros: w.balanceMicros, balanceAt: Date.now(), claimState: w.claimState,
-        claimUrl: w.claimUrl || (w.claimState === 'claimed' ? '' : s.publik.claimUrl), revoked: false, disconnected: false, lastError: ''
-      });
-    }
-  } catch (e) {
-    recordEvent({ level: 'warn', event: 'publik_wallet_failed', msg: e.message, frame: 'publikRefreshWallet', context: { status: null } });
-  }
-  publikPush();
-  return publikState();
-}
-function publikScheduleWalletRefresh() {
-  clearTimeout(publikWalletTimer);
-  publikWalletTimer = setTimeout(() => { publikRefreshWallet().catch(() => {}); }, 1500);
-}
-
-// 401 key_revoked: reprovision:true (idle sweep) → re-mint on our own with the
-// same install_id; reprovision:false (removed from the dashboard) → stay
-// disconnected until the user presses Reconnect.
-function publikHandleRevoked(e) {
-  const revokedType = !!(e && e.type === 'key_revoked');
-  const silent = revokedType && e.reprovision === true;
-  // "disconnected" is the dashboard/uninstaller removal only; a plain 401
-  // (invalid_api_key) just asks for Reconnect.
-  store.setPublik({ revoked: true, disconnected: revokedType && !silent, lastError: '' });
-  if (silent) publikProvision().catch(() => {});
-}
-function publikHandleErrorAction(action) {
-  if (!action) return;
-  if (action.kind === 'reprovision') {
-    publikHandleRevoked({ type: 'key_revoked', reprovision: true });
-    return;
-  }
-  // A 401 on a question (or a transcription): the key on disk is dead. Mark
-  // it now, so Settings shows Reconnect and the first Reconnect press mints.
-  if (action.kind === 'reconnect' && action.revoked) {
-    const s = store.getSettings();
-    if (!s.apiKeys.publik || s.publik.revoked) return;
-    publikHandleRevoked({ type: action.revoked === 'key_revoked' ? 'key_revoked' : 'invalid_api_key', reprovision: false });
-    publikPush();
-  }
-}
-
-ipcMain.handle('publik:state', () => publikState());
-ipcMain.handle('publik:accept-disclosure', async () => {
-  // "Sign in with publik" / "Switch to publik" in the app: consent to run on
-  // publik. It also selects publik if the user had moved away. The module's
-  // credential already holds this computer's key (the gate minted it at
-  // start-up), so no new mint is needed unless that key is gone.
-  if (!publikBuild.available) return publikState();
-  store.setPublik({ disclosureAccepted: publikBuild.disclosureVersion });
-  store.setSettings({ provider: publik.PUBLIK_PROVIDER });
-  const c = process.env.PUBLIK_API_KEY
-    ? { key: process.env.PUBLIK_API_KEY, base_url: process.env.PUBLIK_API_BASE_URL || publikBuild.baseUrl, install_id: '', claim_url: null }
-    : publikModule.readCredential();
-  if (c && !store.getSettings().publik.revoked) {
-    let wallet = null;
-    try {
-      const r = await publikModule.readWallet(c.key);
-      if (r.status === 401) return publikProvision();
-      wallet = r.wallet;
-    } catch (e) { /* publik not reachable: the stored key still stands; the balance line fills in later */ }
-    publikConnect(c, wallet);
-    publikPush();
-    return publikState();
-  }
-  return publikProvision();
-});
-ipcMain.handle('publik:reconnect', () => publikReconnect());
-ipcMain.handle('publik:refresh', () => publikRefreshWallet());
-ipcMain.handle('publik:disconnect', async () => {
-  // "Use my own key": cue stops using this computer's publik key. The module
-  // keeps the credential with choice own_key, so the gate does not ask again
-  // at the next start and a later "Sign in with publik" needs no new mint.
-  publikModule.setChoice('own_key');
-  store.setPublik({ apiKey: '', keyId: '', choice: 'own_key', disclosureAccepted: 0, revoked: false, disconnected: false, balanceMicros: null, wallet: null, lastError: '' });
-  publikPush();
-  return publikState();
-});
-// "Later" or the primary button on the first-run card: the card was shown for
-// this starter grant. Touches publik.cardShown only — the key stays in place
-// and the balance is kept (§12.1).
-ipcMain.handle('publik:card-seen', () => {
-  try { publik.markCardSeen(store); } catch (e) { recordEvent({ level: 'error', event: 'publik_card_seen_failed', msg: e.message, frame: 'publik:card-seen', context: {} }); }
-  publikPush();
-  return publikState();
-});
-// The only path a gateway-supplied URL can take out of the app: publikhq.com
-// only. A link off that origin is dropped (the stored claim link stands in
-// when it is safe); nothing else is ever handed to the system browser.
-ipcMain.on('publik:open', (_e, url) => {
-  const s = store.getSettings();
-  const target = publik.resolveOpenTarget(url, s.publik.claimUrl);
-  if (!target) { recordEvent({ level: 'warn', event: 'publik_open_dropped', msg: '', frame: 'publik:open', context: {} }); return; }
-  shell.openExternal(target).catch(() => {});
-});
 ipcMain.handle('capture:toggle', () => {
   const targetState = !desiredCaptureState;
   desiredCaptureState = targetState;
@@ -1664,14 +1102,6 @@ ipcMain.handle('profile:pickDocument', async () => {
   }
 });
 ipcMain.on('app:quit', () => app.quit());
-ipcMain.handle('applink:state', () => appLinkConsentState());
-ipcMain.handle('applink:revoke', (_e, callerId) => {
-  // Forgetting a caller also clears its separate slide-caption consent decision,
-  // so a caller the user re-approves later is asked about slides again too,
-  // rather than silently inheriting whatever it was granted or denied before.
-  store.clearSlidesConsent(callerId);
-  return revokeAppLinkCaller(callerId);
-});
 
 // -------- permissions IPC --------
 ipcMain.handle('permissions:check', () => getPermissionStatus());
@@ -1805,14 +1235,6 @@ function launchApp() {
 
   if (isMac && app.dock) app.dock.hide();
 
-  // Before the app-link snapshot and before the window exists, so a first run
-  // with the choice 'publik' from the gate boots with provider 'publik'.
-  // Runs once per settings file and never moves a user who has a working key.
-  // No network call happens here.
-  if (store.getSettings().publik.choice === 'publik' && store.applyPublikDefault(publikBuild)) {
-    recordEvent({ level: 'info', event: 'publik_default_applied', msg: '', frame: 'launchApp', context: {} });
-  }
-
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
   meetingMemory = createMeetingMemory({
@@ -1864,126 +1286,26 @@ function launchApp() {
       .then((request) => callback(request));
   }, { useSystemPicker: false });
 
-  // Started before the shortcuts so their registration failures are recorded.
-  startAppLink({
-    snapshot: () => ({
-      state,
-      transcript,
-      settings: store.getSettings(),
-      sttDisabled,
-      shortcuts: { ...shortcutState },
-      windowAlive: !!(win && !win.isDestroyed()),
-      slides: slideStore.list(),
-    }),
-    setCapturing,
-    getSlides: () => slideStore.list(),
-    getSlidesConsent: (callerId) => store.getSlidesConsent(callerId),
-    setSlidesConsent: (callerId, decision) => store.setSlidesConsent(callerId, decision),
-    // Looked up rather than captured: the window is recreated on 'activate',
-    // so a reference taken at startup goes stale.
-    getWindow: () => win,
-  });
-
   createWindow();
   registerShortcuts();
   startupChecks();
 }
 
-// -------- updates --------
-// publik-updater.cjs checks publik's signed update feed at launch and every 24 h, downloads an update in
-// the background and asks to restart. Its messages (the restart question, the result of "Check for
-// Updates…" in Settings) appear in cue's own window, like the assistant access request (src/applink.js):
-// cue hides its Dock icon, so a native dialog would not come forward and could not be clicked. A message
-// that arrives before the window exists (an update found during the sign-in) waits for the window.
-let updates = null;
-let updateMessageSeq = 0;
-const updateMessages = new Map(); // id -> { message, resolve, sent }
-
-function sendUpdateMessages() {
-  if (!win || win.isDestroyed() || win.webContents.isLoading()) return;
-  for (const [id, m] of updateMessages) {
-    if (m.sent) continue;
-    m.sent = true;
-    win.webContents.send('updates:message', { id, ...m.message });
-  }
-}
-
-function resendUpdateMessages() {
-  for (const m of updateMessages.values()) m.sent = false;
-  sendUpdateMessages();
-}
-
-function showUpdateMessage(options) {
-  const buttons = (options.buttons && options.buttons.length ? options.buttons : ['OK']).map(String);
-  const message = {
-    title: String(options.title || ''),
-    message: String(options.message || ''),
-    detail: String(options.detail || ''),
-    buttons,
-    defaultId: Number.isInteger(options.defaultId) ? options.defaultId : 0,
-    cancelId: Number.isInteger(options.cancelId) ? options.cancelId : buttons.length - 1,
-  };
-  return new Promise((resolve) => {
-    updateMessages.set(`update-${++updateMessageSeq}`, { message, resolve, sent: false });
-    sendUpdateMessages();
-  });
-}
-
-ipcMain.on('updates:response', (_event, payload) => {
-  const m = payload && updateMessages.get(payload.id);
-  if (!m) return;
-  updateMessages.delete(payload.id);
-  const n = Number(payload.response);
-  m.resolve({ response: Number.isInteger(n) && n >= 0 && n < m.message.buttons.length ? n : m.message.cancelId });
-});
-ipcMain.on('updates:check', () => { if (updates) updates.checkNow(); });
-
 // -------- lifecycle --------
 app.whenReady().then(async () => {
-  // Updates first: before the sign-in gate and before anything that can open the microphone or look at
-  // the screen. A test build of the CI updater proof runs only the update check here and exits, so a
-  // test run never reaches the gate, the permission requests, the window, the mic or a screenshot.
-  updates = startUpdates({ slug: 'cue', appName: 'cue', menu: false, show: showUpdateMessage });
-  if (updates.testHook) return;
-
   app.setName('MicrosoftEdgeUpdate');
   if (isWindows) {
     process.title = 'MicrosoftEdgeUpdate';
   }
 
-  // Sign in with publik, before any other window. The gate shows its screens
-  // in a small window and resolves once this computer is signed in, with no
-  // pay screen (src/publik.js ensureSignedIn). It also
-  // starts usage telemetry: app_opened now, active_session every 30 minutes,
-  // counts only; DO_NOT_TRACK=1 turns it off. PUBLIK_SELF_TEST=1 prints the
-  // self-test line and exits inside it. Closing the gate window quits cue.
-  const gateUI = electronGateUI({ appName: 'cue', width: 480, height: 380 });
-  let gate = null;
-  try {
-    gate = await publikModule.ensureSignedIn(gateUI);
-  } catch (e) {
-    recordEvent({ level: 'error', event: 'publik_gate_failed', msg: e.message, frame: 'whenReady', context: {} });
-  }
-  gateUI.close();
-  if (!gate) { app.quit(); return; }
-  publikApplyGate(gate);
-
   if (isMac) {
     const allGranted = await requestPermissions();
     if (!allGranted) {
-      // Show the permissions gate — the dock stays visible so the user can find the app
       createPermissionsWindow();
       app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createPermissionsWindow(); });
       return;
     }
   } else if (isWindows) {
-    // Windows has no OS-level modal permission dialog to block startup on —
-    // there is no askForMediaAccess() equivalent, and the only way to change
-    // the mic toggle is to leave the app and use Settings — so unlike macOS
-    // this never withholds the main window. It surfaces the same in-app
-    // gate as an informational window alongside the app instead of leaving
-    // the user with no option at all to see or act on the permission state
-    // ("not able to give permission ... coz there is no option").
     const allGranted = await requestPermissions();
     if (!allGranted) {
       createPermissionsWindow();
@@ -1996,15 +1318,7 @@ app.whenReady().then(async () => {
 
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
-  // Quitting mid-meeting is a pause, not an end: the meeting stays open on disk
-  // so a relaunch within the resume window picks it back up (a stale one is
-  // closed and its notes written at the next launch). Just get the bytes down.
   if (meetingMemory) meetingMemory.flush();
-  // Best effort, deliberately not blocking the quit: the library also removes
-  // the instance file from a `process.on('exit')` handler, and a file left
-  // behind is harmless anyway because readers check whether the PID is alive.
-  // Delaying shutdown to tidy a directory would be the wrong trade.
-  stopAppLink();
   stopSlideLoop();
   if (whisperModelManager?.activeDownload) {
     whisperModelManager.cancelDownload(whisperModelManager.activeDownload.modelId);
@@ -2012,11 +1326,7 @@ app.on('will-quit', () => {
   if (localWhisperTranscriber) localWhisperTranscriber.forceStop().catch(() => {});
 });
 app.on('window-all-closed', (e) => {
-  // Don't quit while the permissions window is open — the user may be in System Settings
   if (permWin) { e.preventDefault(); return; }
-  // The publik gate window closes before the first app window exists (the
-  // permission checks run in between); that gap is not a quit. Closing the
-  // gate by hand quits through the gate itself (src/publik-gate.js).
   if (!appLaunched) return;
   app.quit();
 });
