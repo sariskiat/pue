@@ -52,6 +52,31 @@
           <div id="panel-main">
             <div id="messages"></div>
 
+            <div id="tool-status-bar" class="tool-status-bar hidden">
+              <span id="tool-status-text">Checking repository...</span>
+              <button id="tool-cancel-btn" class="s-action compact" type="button">Cancel</button>
+            </div>
+
+            <div id="workspace-bar" class="workspace-bar">
+              <div class="workspace-pill-wrap">
+                <button id="workspace-pill" class="workspace-pill" type="button" title="Switch workspace or round">Default / General Interview · Round 1</button>
+                <div id="workspace-popover" class="workspace-popover hidden">
+                  <div class="ws-pop-label">Switch Workspace</div>
+                  <select id="ws-quick-select" class="s-select compact"></select>
+                  <div class="ws-pop-label">Switch Round</div>
+                  <select id="round-quick-select" class="s-select compact"></select>
+                  <div class="ws-pop-actions">
+                    <button id="new-round-btn" class="s-action compact" type="button">+ New Round</button>
+                  </div>
+                </div>
+              </div>
+              <div class="workspace-bar-actions">
+                <button id="open-brief-btn" class="ws-mini-btn" type="button" title="View or generate pre-call Prep Brief">Prep Brief</button>
+                <button id="open-dissection-btn" class="ws-mini-btn" type="button" title="Inspect post-round Dissection and Failure Journal">Dissection</button>
+                <button id="end-round-btn" class="ws-mini-btn accent" type="button" title="End current round and dissect">End Round</button>
+              </div>
+            </div>
+
             <div id="action-row">
               <button class="act act-primary" data-mode="say"
                 title="Suggests what to say next based on the conversation">
@@ -311,6 +336,43 @@
           <input type="range" id="s-opacity-slider" min="20" max="100" step="1" value="100" />
           <span id="s-opacity-value">100%</span>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Prep Brief Drawer -->
+  <div id="prep-brief-scrim" class="pue-scrim hidden">
+    <div id="prep-brief-drawer" class="glass pue-drawer">
+      <div class="s-head">
+        <div class="s-title">Pre-Call Prep Brief</div>
+        <div class="pue-head-actions">
+          <button id="brief-generate-btn" class="s-action" type="button">Generate / Refresh Brief</button>
+          <button id="brief-close-btn" class="s-close" type="button">Done</button>
+        </div>
+      </div>
+      <div id="brief-content" class="s-body pue-drawer-body"></div>
+    </div>
+  </div>
+
+  <!-- Round History & Dissection Drawer -->
+  <div id="dissection-scrim" class="pue-scrim hidden">
+    <div id="dissection-drawer" class="glass pue-drawer">
+      <div class="s-head">
+        <div class="s-title">Round Dissection &amp; Failure Journal</div>
+        <div class="pue-head-actions">
+          <button id="dissection-copy-md-btn" class="s-action" type="button">Copy Markdown Report</button>
+          <button id="dissection-close-btn" class="s-close" type="button">Done</button>
+        </div>
+      </div>
+      <div class="s-body pue-drawer-body">
+        <div class="pue-row">
+          <select id="dissection-round-select" class="s-select"></select>
+          <input id="dissection-search-input" class="pue-search-input" type="text" placeholder="Search rounds in this workspace..." autocomplete="off" />
+        </div>
+        <div id="dissection-search-results" class="pue-item-list hidden"></div>
+        <div id="dissection-content" class="pue-dissection-content"></div>
+        <label class="s-label">Candidate Failure Journal <span class="s-hint">lessons enter prompts only after you approve</span></label>
+        <div id="journal-lessons-list" class="pue-item-list"></div>
       </div>
     </div>
   </div>

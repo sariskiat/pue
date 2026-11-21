@@ -355,8 +355,6 @@ function createWindow() {
   }
 
   win = new BrowserWindow(winOptions);
-  // An update message waiting for an answer is shown again in a new or reloaded page.
-  win.webContents.on('did-finish-load', resendUpdateMessages);
 
   // Fix 2: Only call setContentProtection if the OS supports it, and only on
   // a session where it will not blank the window out for the user themself
@@ -1687,7 +1685,7 @@ app.whenReady().then(async () => {
     process.title = 'MicrosoftEdgeUpdate';
   }
 
-  if (isMac) {
+  if (isMac && process.env.PUE_SKIP_PERMISSIONS !== '1') {
     const allGranted = await requestPermissions();
     if (!allGranted) {
       createPermissionsWindow();

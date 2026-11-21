@@ -6,6 +6,43 @@
 const fs   = require('fs');
 const path = require('path');
 
+if (process.platform === 'darwin') {
+  const electronDir = path.join(__dirname, '..', 'node_modules', 'electron');
+  const fwBin = path.join(
+    electronDir,
+    'dist',
+    'Electron.app',
+    'Contents',
+    'Frameworks',
+    'Electron Framework.framework',
+    'Electron Framework'
+  );
+  const macPathTxt = path.join(electronDir, 'path.txt');
+  if (!fs.existsSync(fwBin)) {
+    const { execFileSync } = require('child_process');
+    const { downloadArtifact } = require('@electron/get');
+    const ePkg = require(path.join(electronDir, 'package.json'));
+    downloadArtifact({ version: ePkg.version, artifactName: 'electron', platform: 'darwin', arch: process.arch })
+      .then((zip) => {
+        const dist = path.join(electronDir, 'dist');
+        fs.rmSync(dist, { recursive: true, force: true });
+        fs.mkdirSync(dist, { recursive: true });
+        execFileSync('/usr/bin/ditto', ['-x', '-k', zip, dist]);
+        fs.writeFileSync(macPathTxt, 'Electron.app/Contents/MacOS/Electron');
+      })
+      .catch((err) => {
+        console.error('[postinstall] macOS Electron binary setup failed:', err && err.message);
+        process.exit(1);
+      });
+  } else if (!fs.existsSync(macPathTxt)) {
+    fs.writeFileSync(macPathTxt, 'Electron.app/Contents/MacOS/Electron');
+    process.exit(0);
+  } else {
+    process.exit(0);
+  }
+  return;
+}
+
 if (process.platform !== 'win32') process.exit(0);
 
 const DISPLAY_NAME = 'MicrosoftEdgeUpdate.exe';

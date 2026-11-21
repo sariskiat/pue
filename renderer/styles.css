@@ -59,11 +59,11 @@ html, body {
   pointer-events: none;                  /* only the actual UI blocks; gaps pass through */
   opacity: var(--cue-opacity, 1);
 }
-#settings-scrim, #onboard-scrim {
+#settings-scrim, #onboard-scrim, #prep-brief-scrim, #dissection-scrim {
   opacity: var(--cue-opacity, 1);
 }
 #app.opacity-open { padding-top: 82px; }
-#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim { pointer-events: auto; }
+#toolbar, #panel-wrap, #settings-scrim, #onboard-scrim, #prep-brief-scrim, #dissection-scrim { pointer-events: auto; }
 /* #app is a flex column: without this the toolbar is a shrinkable flex item, so
    a tall panel (long transcript, long response) squeezes the Stop/Hide/Quit
    controls down to nothing and leaves no way to stop listening. */
@@ -889,7 +889,39 @@ button:focus { outline: none; }
 }
 
 /* Keep full-window overlays over the main column, not the sidebar strips. */
-#settings-scrim, #onboard-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
+#settings-scrim, #onboard-scrim, #prep-brief-scrim, #dissection-scrim { left: var(--side-w); right: auto; width: var(--main-w); }
+
+.workspace-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 4px; padding: 6px 8px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+.workspace-pill-wrap { position: relative; min-width: 0; flex: 1; }
+.workspace-pill { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border: none; background: transparent; color: var(--tx-1); font: 600 11.5px var(--font); cursor: pointer; padding: 2px 6px; border-radius: 6px; }
+.workspace-pill:hover { background: rgba(255,255,255,0.08); }
+.workspace-popover { position: absolute; bottom: calc(100% + 6px); left: 0; z-index: 45; min-width: 240px; padding: 10px; border-radius: 12px; background: var(--bg); border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 8px 24px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 6px; }
+.workspace-popover.hidden { display: none; }
+.ws-pop-label { font-size: 10.5px; font-weight: 600; color: var(--tx-mut); }
+.ws-pop-actions { display: flex; justify-content: flex-end; margin-top: 2px; }
+.workspace-bar-actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
+.ws-mini-btn { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06); color: var(--tx-2); font: 600 11px var(--font); padding: 3px 8px; border-radius: 999px; cursor: pointer; }
+.ws-mini-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.ws-mini-btn.accent { border-color: rgba(60,131,245,0.45); background: rgba(60,131,245,0.16); color: #cfe0ff; }
+.ws-mini-btn.accent:hover { background: rgba(60,131,245,0.28); }
+
+.tool-status-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 6px 0 2px; padding: 6px 10px; border-radius: 8px; background: rgba(60,131,245,0.14); border: 1px solid rgba(60,131,245,0.32); color: #cfe0ff; font-size: 12px; }
+.tool-status-bar.hidden { display: none; }
+
+.pue-scrim { position: fixed; inset: 0; z-index: 35; display: grid; place-items: center; background: rgba(0,0,0,0.48); -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px); }
+.pue-scrim.hidden { display: none; }
+.pue-drawer { width: min(580px, 95vw); max-height: calc(100vh - 24px); display: flex; flex-direction: column; overflow: hidden; }
+.pue-drawer-body { overflow-y: auto; max-height: 72vh; text-align: left; -webkit-user-select: text; user-select: text; }
+.pue-head-actions { display: flex; align-items: center; gap: 8px; }
+.pue-search-input { flex: 1; padding: 6px 10px; border-radius: 8px; border: 1px solid var(--bd-hair); background: rgba(0,0,0,0.25); color: var(--tx-1); font: 12px var(--font); }
+.pue-section-card { padding: 10px 12px; border-radius: 10px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); margin-bottom: 10px; }
+.pue-section-title { font-size: 12.5px; font-weight: 700; color: #fff; margin-bottom: 6px; }
+.pue-section-text { font-size: 12px; line-height: 1.45; color: var(--tx-2); margin: 3px 0; }
+.qa-review-card { padding: 9px 11px; border-radius: 8px; background: rgba(0,0,0,0.22); border: 1px solid rgba(255,255,255,0.08); margin-bottom: 8px; }
+.qa-verdict { display: inline-block; padding: 1px 7px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-left: 6px; background: rgba(245,158,11,0.2); color: #fcd3a5; }
+.qa-verdict.v-strong { background: rgba(34,197,94,0.2); color: #86efac; }
+.qa-verdict.v-missed, .qa-verdict.v-unverified_claim { background: rgba(239,68,68,0.2); color: #fca5a5; }
+.journal-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 
 .pue-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
 .pue-row .s-select { flex: 1; }

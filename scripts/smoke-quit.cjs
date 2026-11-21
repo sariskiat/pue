@@ -11,17 +11,8 @@ process.on('uncaughtException', error => {
   app.exit(1);
 });
 
-const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-quit-smoke-'));
+const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-quit-smoke-'));
 app.setPath('userData', profile);
-// Keep app-link discovery separate from any installed cue instance.
-process.env.LOCALAPPDATA = profile;
-const appLink = require('../vendor/app-link');
-const { AppLinkServer } = appLink;
-appLink.AppLinkServer = class extends AppLinkServer {
-  constructor(options) {
-    super({ ...options, appId: `${options.appId}.quit-smoke-${process.pid}` });
-  }
-};
 let clickedQuit = false;
 let receivedQuit = false;
 const timeout = setTimeout(() => {

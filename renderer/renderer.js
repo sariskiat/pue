@@ -1262,18 +1262,38 @@
     scrollMessagesToEnd();
     setBusy(true);
   });
+  function showToolStatus(detail) {
+    const pick = typeof $ === 'function' ? $ : (s) => (document.getElementById ? document.getElementById(s.slice(1)) : null);
+    const bar = pick('#tool-status-bar');
+    const txt = pick('#tool-status-text');
+    if (!bar || !txt) return;
+    txt.textContent = `Checking ${detail || 'repository'}...`;
+    bar.classList.remove('hidden');
+  }
+  function clearToolStatus() {
+    const pick = typeof $ === 'function' ? $ : (s) => (document.getElementById ? document.getElementById(s.slice(1)) : null);
+    const bar = pick('#tool-status-bar');
+    if (bar) bar.classList.add('hidden');
+  }
+
   cue.on('llm:thinking', () => {
     showThinking();
     onAnswerActivity(); // a long think is not a lost answer: keep the failsafe away
   });
   cue.on('llm:token', ({ text }) => {
+    clearToolStatus();
     appendToken(text);
     onAnswerActivity(); // nor is a long answer that is still streaming
   });
-  cue.on('llm:done', () => { finalizeAi(); setBusy(false); });
+  cue.on('llm:done', () => { clearToolStatus(); finalizeAi(); setBusy(false); });
   cue.on('llm:error', ({ message }) => {
+    clearToolStatus();
     if (!aiEl) startAi(true);
     aiEl.dataset.raw = message; finalizeAi(); setBusy(false);
+  });
+  cue.on('llm:tool', ({ detail }) => {
+    showToolStatus(detail);
+    onAnswerActivity();
   });
   cue.on('transcript', ({ channel, text }) => {
     if (!text || text.trim().length < 2 || /^[?!.,;:\-…]+$/.test(text.trim())) return;
@@ -1773,6 +1793,14 @@
     if (e.key === 'Escape' && !scrim.classList.contains('hidden')) void closeSettings();
     if ((e.metaKey || e.ctrlKey) && e.key === ',') { e.preventDefault(); openSettings(); }
   });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape' || !scrim.classList.contains('hidden')) return;
+    const briefScrim = $('#prep-brief-scrim');
+    if (briefScrim && !briefScrim.classList.contains('hidden')) { briefScrim.classList.add('hidden'); return; }
+    const dissScrim = $('#dissection-scrim');
+    if (dissScrim && !dissScrim.classList.contains('hidden')) { dissScrim.classList.add('hidden'); return; }
+    if (busy && cue.llmCancel) { cue.llmCancel(); clearToolStatus(); setBusy(false); }
+  });
 
   // Safety net for the same class of bug: html/body are overflow:hidden, so any
   // stray programmatic scroll of the document is invisible to the user and
@@ -1789,7 +1817,7 @@
     // The window trails the cursor while dragging; going click-through then would drop the release.
     if (draggingWindow) return;
     const el = document.elementFromPoint(e.clientX, e.clientY);
-    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim'));
+    const overUI = !!(el && el.closest && el.closest('#toolbar, #panel-wrap, #transcript-sidebar, #settings-scrim, #onboard-scrim, #prep-brief-scrim, #dissection-scrim'));
     setIgnore(!overUI);
   });
   setIgnore(true); // start fully click-through; hovering the panel re-enables it
@@ -2044,6 +2072,450 @@
       }
     }
   }
+
+  function renderWorkspaceOverlayBar() {
+    const pill = $('#workspace-pill');
+    const active = workspaceState && workspaceState.activeWorkspace;
+    if (!pill) return;
+    if (!active) {
+      pill.textContent = 'Default · Round 1';
+      return;
+    }
+    const round = (active.rounds || []).find((r) => r.id === active.activeRoundId) || (active.rounds || [])[0];
+    const roundName = round ? round.name : 'Round 1';
+    pill.textContent = `${active.company} / ${active.role} · ${roundName}`;
+
+    const wsQuick = $('#ws-quick-select');
+    if (wsQuick) {
+      clearChildren(wsQuick);
+      for (const it of workspaceState.items || []) {
+        const opt = document.createElement('option');
+        opt.value = it.id;
+        opt.textContent = `${it.company} · ${it.role}`;
+        if (it.id === workspaceState.activeWorkspaceId) opt.selected = true;
+        wsQuick.appendChild(opt);
+      }
+    }
+    const rndQuick = $('#round-quick-select');
+    if (rndQuick) {
+      clearChildren(rndQuick);
+      for (const r of active.rounds || []) {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = `${r.name} (${r.status || 'open'})`;
+        if (r.id === active.activeRoundId) opt.selected = true;
+        rndQuick.appendChild(opt);
+      }
+    }
+  }
+
+  function appendBulletSection(host, heading, items) {
+    if (!Array.isArray(items) || !items.length) return;
+    const card = document.createElement('div');
+    card.className = 'pue-section-card';
+    const h = document.createElement('div');
+    h.className = 'pue-section-title';
+    h.textContent = heading;
+    card.appendChild(h);
+    for (const item of items) {
+      const line = document.createElement('div');
+      line.className = 'pue-section-text';
+      line.textContent = `• ${item}`;
+      card.appendChild(line);
+    }
+    host.appendChild(card);
+  }
+
+  function renderPrepBriefBody(prepBrief) {
+    const host = $('#brief-content');
+    if (!host) return;
+    clearChildren(host);
+    if (!prepBrief || (!prepBrief.summary && !(prepBrief.repoMatches && prepBrief.repoMatches.length))) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No Prep Brief generated yet. Attach JD/test files and click Generate / Refresh Brief.';
+      host.appendChild(empty);
+      return;
+    }
+
+    if (prepBrief.summary) {
+      const card = document.createElement('div');
+      card.className = 'pue-section-card';
+      const h = document.createElement('div');
+      h.className = 'pue-section-title';
+      h.textContent = 'Role Summary';
+      const p = document.createElement('div');
+      p.className = 'pue-section-text';
+      p.textContent = prepBrief.summary;
+      card.append(h, p);
+      host.appendChild(card);
+    }
+
+    if (Array.isArray(prepBrief.repoMatches) && prepBrief.repoMatches.length) {
+      appendBulletSection(
+        host,
+        'Repository Matches',
+        prepBrief.repoMatches.map((m) => `${m.repoName}: ${m.whyRelevant}${m.talkingPoints ? ' (' + m.talkingPoints + ')' : ''}`)
+      );
+    }
+    appendBulletSection(host, 'Test Plan', prepBrief.testPlan || []);
+    appendBulletSection(host, 'Likely Questions', prepBrief.likelyQuestions || []);
+    appendBulletSection(host, 'Focus From Earlier Rounds', prepBrief.priorRoundFocus || []);
+  }
+
+  function renderDissectionBody(dissection, journal) {
+    const host = $('#dissection-content');
+    const journalHost = $('#journal-lessons-list');
+    clearChildren(host);
+    clearChildren(journalHost);
+
+    if (!dissection) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No dissection recorded for this round yet. Click End Round after at least 4 transcript turns.';
+      host.appendChild(empty);
+    } else {
+      if (dissection.roundSummary) {
+        const sumCard = document.createElement('div');
+        sumCard.className = 'pue-section-card';
+        const h = document.createElement('div');
+        h.className = 'pue-section-title';
+        h.textContent = 'Round Summary';
+        const p = document.createElement('div');
+        p.className = 'pue-section-text';
+        p.textContent = dissection.roundSummary;
+        sumCard.append(h, p);
+        host.appendChild(sumCard);
+      }
+
+      if (Array.isArray(dissection.qaReview) && dissection.qaReview.length) {
+        const wrap = document.createElement('div');
+        wrap.className = 'pue-section-card';
+        const h = document.createElement('div');
+        h.className = 'pue-section-title';
+        h.textContent = 'Side-by-Side Q&A Review';
+        wrap.appendChild(h);
+
+        for (const q of dissection.qaReview) {
+          const qc = document.createElement('div');
+          qc.className = 'qa-review-card';
+          const qLine = document.createElement('div');
+          qLine.className = 'pue-section-title';
+          qLine.textContent = `Q: ${q.question}`;
+          const badge = document.createElement('span');
+          badge.className = `qa-verdict v-${q.verdict || 'partial'}`;
+          badge.textContent = q.verdict || 'partial';
+          qLine.appendChild(badge);
+          qc.appendChild(qLine);
+
+          if (q.spokenAnswer) {
+            const sp = document.createElement('div');
+            sp.className = 'pue-section-text';
+            sp.textContent = `You spoke: ${q.spokenAnswer}`;
+            qc.appendChild(sp);
+          }
+          if (q.copilotSuggestion) {
+            const cp = document.createElement('div');
+            cp.className = 'pue-section-text';
+            cp.textContent = `Copilot: ${q.copilotSuggestion}`;
+            qc.appendChild(cp);
+          }
+          if (q.gapWhy) {
+            const gw = document.createElement('div');
+            gw.className = 'pue-section-text';
+            gw.textContent = `Gap: ${q.gapWhy}`;
+            qc.appendChild(gw);
+          }
+          if (Array.isArray(q.citedSources) && q.citedSources.length) {
+            const cs = document.createElement('div');
+            cs.className = 'pue-empty';
+            cs.textContent = `Sources: ${q.citedSources.join(', ')}`;
+            qc.appendChild(cs);
+          }
+          wrap.appendChild(qc);
+        }
+        host.appendChild(wrap);
+      }
+
+      const missedAndSignals = [
+        ...(dissection.missedOpportunities || []).map((m) => `Missed: ${m}`),
+        ...(dissection.interviewerSignals || []).map((s) => `Signal: ${s}`)
+      ];
+      appendBulletSection(host, 'Missed Opportunities & Interviewer Signals', missedAndSignals);
+
+      const cp = dissection.nextRoundCheckpoint || {};
+      const cpItems = [
+        ...(cp.settledTopics || []).map((t) => `Settled: ${t}`),
+        ...(cp.openWeaknessesToRepair || []).map((w) => `Repair next: ${w}`),
+        ...(cp.promisedFollowUps || []).map((f) => `Follow-up: ${f}`)
+      ];
+      appendBulletSection(host, 'Next-Round Checkpoint', cpItems);
+    }
+
+    const activeWsId = workspaceState && workspaceState.activeWorkspaceId;
+    const proposed = ((journal && journal.lessons) || []).filter((l) => l.status === 'proposed');
+    if (!proposed.length) {
+      const empty = document.createElement('div');
+      empty.className = 'pue-empty';
+      empty.textContent = 'No pending Failure Journal lessons awaiting approval.';
+      journalHost.appendChild(empty);
+    } else {
+      for (const lesson of proposed) {
+        const card = document.createElement('div');
+        card.className = 'qa-review-card';
+        const txt = document.createElement('div');
+        txt.className = 'pue-section-text';
+        txt.textContent = `[${lesson.failureType || 'lesson'}] ${lesson.proposedFix}`;
+
+        const acceptBtn = document.createElement('button');
+        acceptBtn.type = 'button';
+        acceptBtn.className = 's-action compact';
+        acceptBtn.textContent = 'Accept for This Job';
+        acceptBtn.addEventListener('click', async () => {
+          const res = await cue.workspaceDecideLesson(activeWsId, lesson.id, 'accept_workspace');
+          renderDissectionBody(dissection, res && res.journal);
+          showToast('Lesson added to this workspace');
+        });
+
+        const promoteBtn = document.createElement('button');
+        promoteBtn.type = 'button';
+        promoteBtn.className = 's-action compact';
+        promoteBtn.textContent = 'Promote to Global Profile';
+        promoteBtn.addEventListener('click', async () => {
+          const res = await cue.workspaceDecideLesson(activeWsId, lesson.id, 'promote_global');
+          renderDissectionBody(dissection, res && res.journal);
+          showToast('Lesson promoted to Global Profile');
+        });
+
+        const dismissBtn = document.createElement('button');
+        dismissBtn.type = 'button';
+        dismissBtn.className = 's-action danger compact';
+        dismissBtn.textContent = 'Dismiss';
+        dismissBtn.addEventListener('click', async () => {
+          const res = await cue.workspaceDecideLesson(activeWsId, lesson.id, 'dismiss');
+          renderDissectionBody(dissection, res && res.journal);
+        });
+
+        card.append(txt, acceptBtn, promoteBtn, dismissBtn);
+        journalHost.appendChild(card);
+      }
+    }
+  }
+
+  let currentDissectionMarkdown = '';
+  async function loadAndRenderDissection(roundId) {
+    const active = workspaceState && workspaceState.activeWorkspace;
+    if (!active) return;
+    const sel = $('#dissection-round-select');
+    if (sel) {
+      clearChildren(sel);
+      for (const r of active.rounds || []) {
+        const opt = document.createElement('option');
+        opt.value = r.id;
+        opt.textContent = `${r.name} (${r.status || 'open'})`;
+        if (r.id === (roundId || active.activeRoundId)) opt.selected = true;
+        sel.appendChild(opt);
+      }
+    }
+    const targetRoundId = roundId || active.activeRoundId;
+    const [dissPayload, journal] = await Promise.all([
+      cue.workspaceGetDissection(active.id, targetRoundId),
+      cue.workspaceListJournal(active.id)
+    ]);
+    currentDissectionMarkdown = (dissPayload && dissPayload.markdown) || '';
+    renderDissectionBody(dissPayload && dissPayload.round ? dissPayload.round.dissection : null, journal);
+  }
+
+  const toolCancelBtn = $('#tool-cancel-btn');
+  if (toolCancelBtn) {
+    toolCancelBtn.addEventListener('click', () => {
+      if (cue.llmCancel) cue.llmCancel();
+      clearToolStatus();
+      setBusy(false);
+    });
+  }
+  const wsPillBtn = $('#workspace-pill');
+  const wsPopover = $('#workspace-popover');
+  if (wsPillBtn && wsPopover) {
+    wsPillBtn.addEventListener('click', () => {
+      renderWorkspaceOverlayBar();
+      wsPopover.classList.toggle('hidden');
+    });
+  }
+  const wsQuickSel = $('#ws-quick-select');
+  if (wsQuickSel) {
+    wsQuickSel.addEventListener('change', async () => {
+      if (!wsQuickSel.value) return;
+      clearMessages();
+      const snap = await cue.workspaceSelect(wsQuickSel.value);
+      applyWorkspaceSnapshot(snap);
+      if (wsPopover) wsPopover.classList.add('hidden');
+    });
+  }
+  const rndQuickSel = $('#round-quick-select');
+  if (rndQuickSel) {
+    rndQuickSel.addEventListener('change', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active || !rndQuickSel.value) return;
+      clearMessages();
+      const snap = await cue.workspaceSelectRound(active.id, rndQuickSel.value);
+      applyWorkspaceSnapshot(snap);
+      if (wsPopover) wsPopover.classList.add('hidden');
+    });
+  }
+  const newRoundBtn = $('#new-round-btn');
+  if (newRoundBtn) {
+    newRoundBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      clearMessages();
+      const snap = await cue.workspaceCreateRound(active.id);
+      applyWorkspaceSnapshot(snap);
+      if (wsPopover) wsPopover.classList.add('hidden');
+      showToast('Started new round');
+    });
+  }
+  const openBriefBtn = $('#open-brief-btn');
+  const prepBriefScrim = $('#prep-brief-scrim');
+  if (openBriefBtn && prepBriefScrim) {
+    openBriefBtn.addEventListener('click', () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      renderPrepBriefBody(active && active.prepBrief);
+      prepBriefScrim.classList.remove('hidden');
+      setIgnore(false);
+    });
+  }
+  const briefCloseBtn = $('#brief-close-btn');
+  if (briefCloseBtn && prepBriefScrim) {
+    briefCloseBtn.addEventListener('click', () => prepBriefScrim.classList.add('hidden'));
+    prepBriefScrim.addEventListener('click', (e) => {
+      if (e.target === prepBriefScrim) prepBriefScrim.classList.add('hidden');
+    });
+  }
+  const briefGenBtn = $('#brief-generate-btn');
+  if (briefGenBtn) {
+    briefGenBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      briefGenBtn.disabled = true;
+      briefGenBtn.textContent = 'Generating...';
+      try {
+        const res = await cue.workspaceGenerateBrief(active.id);
+        if (res && res.snapshot) applyWorkspaceSnapshot(res.snapshot);
+        renderPrepBriefBody(res && res.brief);
+        showToast('Prep Brief updated');
+      } catch (err) {
+        showStatus((err && err.message) || String(err));
+      } finally {
+        briefGenBtn.disabled = false;
+        briefGenBtn.textContent = 'Generate / Refresh Brief';
+      }
+    });
+  }
+  const openDissBtn = $('#open-dissection-btn');
+  const dissScrim = $('#dissection-scrim');
+  if (openDissBtn && dissScrim) {
+    openDissBtn.addEventListener('click', async () => {
+      dissScrim.classList.remove('hidden');
+      setIgnore(false);
+      await loadAndRenderDissection();
+    });
+  }
+  const dissCloseBtn = $('#dissection-close-btn');
+  if (dissCloseBtn && dissScrim) {
+    dissCloseBtn.addEventListener('click', () => dissScrim.classList.add('hidden'));
+    dissScrim.addEventListener('click', (e) => {
+      if (e.target === dissScrim) dissScrim.classList.add('hidden');
+    });
+  }
+  const dissRoundSel = $('#dissection-round-select');
+  if (dissRoundSel) {
+    dissRoundSel.addEventListener('change', () => {
+      void loadAndRenderDissection(dissRoundSel.value);
+    });
+  }
+  const dissCopyBtn = $('#dissection-copy-md-btn');
+  if (dissCopyBtn) {
+    dissCopyBtn.addEventListener('click', async () => {
+      if (!currentDissectionMarkdown) {
+        showToast('No Markdown report available for this round yet');
+        return;
+      }
+      try {
+        await navigator.clipboard.writeText(currentDissectionMarkdown);
+        showToast('Copied Markdown report');
+      } catch (_) {
+        showToast('Could not copy report');
+      }
+    });
+  }
+  const dissSearchInput = $('#dissection-search-input');
+  if (dissSearchInput) {
+    dissSearchInput.addEventListener('input', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      const resHost = $('#dissection-search-results');
+      if (!active || !resHost) return;
+      const q = dissSearchInput.value.trim();
+      clearChildren(resHost);
+      if (!q) {
+        resHost.classList.add('hidden');
+        return;
+      }
+      const hits = (await cue.workspaceSearchRounds(active.id, q)) || [];
+      resHost.classList.remove('hidden');
+      if (!hits.length) {
+        const empty = document.createElement('div');
+        empty.className = 'pue-empty';
+        empty.textContent = 'No matching rounds in this workspace.';
+        resHost.appendChild(empty);
+        return;
+      }
+      for (const h of hits) {
+        const row = document.createElement('div');
+        row.className = 'pue-item-row';
+        const title = document.createElement('span');
+        title.className = 'pue-item-title';
+        title.textContent = `${h.name}: ${h.sample || ''}`;
+        const viewBtn = document.createElement('button');
+        viewBtn.type = 'button';
+        viewBtn.className = 's-action compact';
+        viewBtn.textContent = 'Open';
+        viewBtn.addEventListener('click', () => {
+          void loadAndRenderDissection(h.roundId);
+        });
+        row.append(title, viewBtn);
+        resHost.appendChild(row);
+      }
+    });
+  }
+  const endRoundBtn = $('#end-round-btn');
+  if (endRoundBtn) {
+    endRoundBtn.addEventListener('click', async () => {
+      const active = workspaceState && workspaceState.activeWorkspace;
+      if (!active) return;
+      endRoundBtn.disabled = true;
+      endRoundBtn.textContent = 'Dissecting...';
+      try {
+        const res = await cue.workspaceEndRound(active.id, active.activeRoundId);
+        if (res && res.snapshot) applyWorkspaceSnapshot(res.snapshot);
+        if (dissScrim) {
+          dissScrim.classList.remove('hidden');
+          setIgnore(false);
+          await loadAndRenderDissection(res && res.round && res.round.id);
+        }
+      } catch (err) {
+        showStatus((err && err.message) || String(err));
+      } finally {
+        endRoundBtn.disabled = false;
+        endRoundBtn.textContent = 'End Round';
+      }
+    });
+  }
+  cue.on('round:dissected', ({ round }) => {
+    if (dissScrim && !dissScrim.classList.contains('hidden') && round) {
+      void loadAndRenderDissection(round.id);
+    }
+  });
 
   function applyWorkspaceSnapshot(snap) {
     if (!snap) return;

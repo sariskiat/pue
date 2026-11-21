@@ -28,6 +28,15 @@ const tabHandlerPos = src.indexOf('await saveSettings()', tabClickPos);
 const r5 = tabClickPos > 0 && tabHandlerPos > tabClickPos;
 console.log('5. tab handler awaits saveSettings:', r5);
 
-const allPass = r1 && r2 && r3 && r4 && r5;
+const clearToolDefPos = src.indexOf('function clearToolStatus');
+const r6 = clearToolDefPos !== -1 && llmTokenIdx !== -1 && clearToolDefPos < llmTokenIdx;
+console.log('6. clearToolStatus defined before llm:token:', r6);
+
+const overlayBarDefPos = src.indexOf('function renderWorkspaceOverlayBar');
+const wsChangedPos = src.indexOf("cue.on('workspace:changed'");
+const r7 = overlayBarDefPos !== -1 && wsChangedPos !== -1 && overlayBarDefPos < wsChangedPos;
+console.log('7. renderWorkspaceOverlayBar defined before workspace:changed:', r7);
+
+const allPass = r1 && r2 && r3 && r4 && r5 && r6 && r7;
 console.log('\nAll checks passed:', allPass);
 process.exit(allPass ? 0 : 1);

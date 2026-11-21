@@ -70,8 +70,8 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 
 ### Phase 5: Overlay & Settings UI (`copilot-ui`)
 - [x] Task 13: Add Settings UI tabs for Global Profile & Repos and Job Workspaces (`SPEC-copilot-ui.md`)
-- [ ] Task 14: Add Overlay Workspace/Round pill, Prep Brief drawer, Round Dissection & Failure Journal drawer, and tool status (`SPEC-copilot-ui.md`)
-- [ ] Checkpoint 5: Full end-to-end verification (`npm test`, `node verify.js`, zero `publik`/`applink` residue)
+- [x] Task 14: Add Overlay Workspace/Round pill, Prep Brief drawer, Round Dissection & Failure Journal drawer, and tool status (`SPEC-copilot-ui.md`)
+- [x] Checkpoint 5: Full end-to-end verification (`npm test`, `node verify.js`, zero `publik`/`applink` residue)
 
 ## 5. Risks and Mitigations
 

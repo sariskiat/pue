@@ -372,14 +372,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Add the compact `<Company / Role> · <Round>` header pill and popover (`Switch Workspace`, `New Round`, `End Round & Dissect`), the **Prep Brief** drawer (`Generate / Refresh Brief`), the **Round History & Dissection** drawer (side-by-side Q&A review, missed opportunities, next-round checkpoint, Failure Journal `Accept for This Job` / `Promote to Global Profile` / `Dismiss` buttons, `Copy Markdown Report`), and `llm:tool` live status + cancel handling. Extend `verify.js` with static assertions for the new handlers.
 
 **Acceptance criteria:**
-- [ ] Overlay renders the Workspace/Round pill, Prep Brief drawer, and Round Dissection drawer with Failure Journal approval actions (`accept_workspace`, `promote_global`, `dismiss`), keeping `setIgnoreMouse` click-through intact.
-- [ ] `llm:tool` displays `"Checking <path>..."`, clears on first `llm:token`, and cancels cleanly on Stop/Escape; XSS payloads in mock filenames/LLM fields render inertly as plain text.
-- [ ] Full `npm test` suite and extended `node verify.js` pass with exit code `0`.
+- [x] Overlay renders the Workspace/Round pill, Prep Brief drawer, and Round Dissection drawer with Failure Journal approval actions (`accept_workspace`, `promote_global`, `dismiss`), keeping `setIgnoreMouse` click-through intact.
+- [x] `llm:tool` displays `"Checking <path>..."`, clears on first `llm:token`, and cancels cleanly on Stop/Escape; XSS payloads in mock filenames/LLM fields render inertly as plain text.
+- [x] Full `npm test` suite and extended `node verify.js` pass with exit code `0`.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/overlay-dissection-ui.test.js && npm test`
-- [ ] Build succeeds: `node verify.js`
-- [ ] Manual check: Launch `CUE_NO_PROTECT=1 npm start` smoke check (or headless Electron smoke script) to confirm clean window boot and quit.
+- [x] Tests pass: `node --test test/overlay-dissection-ui.test.js && npm test`
+- [x] Build succeeds: `node verify.js`
+- [x] Manual check: Launch `CUE_NO_PROTECT=1 npm start` smoke check (or headless Electron smoke script) to confirm clean window boot and quit.
 
 **Dependencies:** Task 13
 
@@ -395,7 +395,7 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 ---
 
 ## Checkpoint 5: After Tasks 13-14 (`copilot-ui` complete & Release Verification)
-- [ ] Full test suite passes (`npm test`)
-- [ ] Static renderer verification passes (`node verify.js`)
-- [ ] Zero `publik` or `applink` hits across runtime files
-- [ ] Every module in `SPEC.md` mapped to `file:line` with `tasks/deviations.md` reviewed ("No deviations" if none)
+- [x] Full test suite passes (`npm test`)
+- [x] Static renderer verification passes (`node verify.js`)
+- [x] Zero `publik` or `applink` hits across runtime files
+- [x] Every module in `SPEC.md` mapped to `file:line` with `tasks/deviations.md` reviewed ("No deviations" if none)
