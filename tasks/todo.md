@@ -207,13 +207,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Implement `src/prep-brief.js` with `buildPrepBriefPrompt({ workspace, profile })` (combining workspace JD/test chunks, human role notes, global `RepoCard`s, experience highlights, and prior round `openWeaknessesToRepair`) and forgiving deterministic `parsePrepBrief(text)` returning `{ summary, repoMatches, testPlan, likelyQuestions, priorRoundFocus }`.
 
 **Acceptance criteria:**
-- [ ] `buildPrepBriefPrompt` includes JD/test evidence, global repo cards, and any `openWeaknessesToRepair` from the latest dissected round in that same workspace.
-- [ ] `parsePrepBrief` parses structured Markdown headings into typed fields and degrades gracefully on malformed model output without throwing.
+- [x] `buildPrepBriefPrompt` includes JD/test evidence, global repo cards, and any `openWeaknessesToRepair` from the latest dissected round in that same workspace.
+- [x] `parsePrepBrief` parses structured Markdown headings into typed fields and degrades gracefully on malformed model output without throwing.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/prep-brief.test.js`
-- [ ] Build succeeds: `node --check src/prep-brief.js`
-- [ ] Manual check: Verify prompt wraps JD/test excerpts inside `<untrusted_context>` tags.
+- [x] Tests pass: `node --test test/prep-brief.test.js`
+- [x] Build succeeds: `node --check src/prep-brief.js`
+- [x] Manual check: Verify prompt wraps JD/test excerpts inside `<untrusted_context>` tags.
 
 **Dependencies:** Task 7
 
