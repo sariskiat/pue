@@ -125,13 +125,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Extend `src/repo-indexer.js` with `indexRepository(rootPath, prevRepoRecord, opts)`. Enforce event-loop yielding every `50` files, a `5,000`-entry discovery cap, a `500`-file index cap prioritizing manifests and `README*` for a `<= 1,200`-char `RepoCard`, canonical `realpath` cycle/escape blocking, exclusions for binaries/minified bundles/lockfiles/`.git`/`node_modules`, and fast incremental refresh using `headSha` and `fileMtimes`.
 
 **Acceptance criteria:**
-- [ ] Indexing skips `.git`, `node_modules`, binaries, `*.min.js`, `.svg`, `.csv`, files `> 256 KB`, symlink cycles, and symlinks pointing outside `rootPath`.
-- [ ] Re-indexing an unchanged 200-file temp repo reuses `fileMtimes` and finishes in `< 100ms` without re-chunking unchanged files.
+- [x] Indexing skips `.git`, `node_modules`, binaries, `*.min.js`, `.svg`, `.csv`, files `> 256 KB`, symlink cycles, and symlinks pointing outside `rootPath`.
+- [x] Re-indexing an unchanged 200-file temp repo reuses `fileMtimes` and finishes in `< 100ms` without re-chunking unchanged files.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/repo-indexer-walk.test.js test/repo-indexer-chunks.test.js`
-- [ ] Build succeeds: `node --check src/repo-indexer.js`
-- [ ] Manual check: Verify `RepoCard` summary length is `<= 1,200` chars on a sample repo.
+- [x] Tests pass: `node --test test/repo-indexer-walk.test.js test/repo-indexer-chunks.test.js`
+- [x] Build succeeds: `node --check src/repo-indexer.js`
+- [x] Manual check: Verify `RepoCard` summary length is `<= 1,200` chars on a sample repo.
 
 **Dependencies:** Task 4
 

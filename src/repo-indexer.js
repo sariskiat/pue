@@ -15,6 +15,82 @@ const RRF_K = 60;
 const BM25_K1 = 1.2;
 const BM25_B = 0.75;
 
+const MAX_DISCOVERED_ENTRIES = 5000;
+const MAX_REPO_FILES = 500;
+const MAX_REPO_FILE_BYTES = 256 * 1024;
+const WALK_YIELD_EVERY = 50;
+
+const EXCLUDED_DIRS = new Set([
+  '.git',
+  'node_modules',
+  'dist',
+  'build',
+  'out',
+  '.next',
+  '.venv',
+  'venv',
+  '__pycache__',
+  'target',
+  'vendor',
+  '.cache',
+  '.idea',
+  '.vscode',
+  'coverage'
+]);
+
+const EXCLUDED_FILES = new Set([
+  'package-lock.json',
+  'yarn.lock',
+  'pnpm-lock.yaml',
+  'cargo.lock',
+  'poetry.lock',
+  'gemfile.lock',
+  'composer.lock',
+  '.ds_store'
+]);
+
+const EXCLUDED_REPO_EXTS = new Set([
+  '.svg',
+  '.csv',
+  '.map',
+  '.png',
+  '.jpg',
+  '.jpeg',
+  '.gif',
+  '.webp',
+  '.ico',
+  '.pdf',
+  '.zip',
+  '.tar',
+  '.gz',
+  '.wasm',
+  '.exe',
+  '.dll',
+  '.so',
+  '.dylib',
+  '.bin'
+]);
+
+const EXT_LANGUAGES = {
+  '.js': 'JavaScript',
+  '.cjs': 'JavaScript',
+  '.mjs': 'JavaScript',
+  '.jsx': 'JavaScript',
+  '.ts': 'TypeScript',
+  '.tsx': 'TypeScript',
+  '.py': 'Python',
+  '.go': 'Go',
+  '.rs': 'Rust',
+  '.java': 'Java',
+  '.kt': 'Kotlin',
+  '.rb': 'Ruby',
+  '.cpp': 'C++',
+  '.c': 'C',
+  '.cs': 'C#',
+  '.swift': 'Swift',
+  '.sql': 'SQL'
+};
+
 const idfCache = new WeakMap();
 
 // Decode UTF-8 and UTF-16 BOM buffers without leaving BOM markers in chunks.
@@ -290,6 +366,288 @@ function scoreChunks(query, chunks, opts = {}) {
   return selected;
 }
 
+function parseTopGitignore(rootPath) {
+  const ignoreDirs = new Set();
+  const ignoreExts = new Set();
+  const ignoreNames = new Set();
+  const gitignorePath = path.join(rootPath, '.gitignore');
+  if (!fs.existsSync(gitignorePath)) return { ignoreDirs, ignoreExts, ignoreNames };
+  try {
+    const raw = fs.readFileSync(gitignorePath, 'utf8');
+    for (const rawLine of raw.split(/\r?\n/)) {
+      const line = rawLine.trim();
+      if (!line || line.startsWith('#') || line.startsWith('!')) continue;
+      const clean = line.replace(/^\/+/, '');
+      if (clean.endsWith('/')) {
+        ignoreDirs.add(clean.replace(/\/+$/, ''));
+      } else if (/^\*\.[A-Za-z0-9_.-]+$/.test(clean)) {
+        ignoreExts.add(clean.slice(1).toLowerCase());
+      } else if (!clean.includes('*')) {
+        ignoreNames.add(clean);
+      }
+    }
+  } catch (_) {
+    // Ignore unreadable .gitignore and rely on built-in exclusions.
+  }
+  return { ignoreDirs, ignoreExts, ignoreNames };
+}
+
+function readGitHeadSha(rootPath) {
+  try {
+    const headFile = path.join(rootPath, '.git', 'HEAD');
+    if (!fs.existsSync(headFile)) return null;
+    const headRaw = fs.readFileSync(headFile, 'utf8').trim();
+    if (!headRaw) return null;
+    if (!headRaw.startsWith('ref:')) return headRaw.slice(0, 7);
+    const refRel = headRaw.replace(/^ref:\s*/, '').trim();
+    const refFile = path.join(rootPath, '.git', refRel);
+    if (fs.existsSync(refFile)) {
+      return fs.readFileSync(refFile, 'utf8').trim().slice(0, 7) || null;
+    }
+    const packedFile = path.join(rootPath, '.git', 'packed-refs');
+    if (fs.existsSync(packedFile)) {
+      const lines = fs.readFileSync(packedFile, 'utf8').split(/\r?\n/);
+      for (const l of lines) {
+        if (l.endsWith(' ' + refRel)) return l.split(' ')[0].slice(0, 7);
+      }
+    }
+    return null;
+  } catch (_) {
+    return null;
+  }
+}
+
+function isInsideCanonicalRoot(realCandidate, realRoot) {
+  const norm = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
+  const cand = norm(realCandidate);
+  const root = norm(realRoot);
+  return cand === root || cand.startsWith(root + path.sep);
+}
+
+// Rank manifests and primary source trees first so the 500-file cap keeps high-ROI files.
+function foragePriority(relPath) {
+  const base = path.basename(relPath).toLowerCase();
+  if (/^(readme|agents|claude|spec)/i.test(base)) return 0;
+  if (['package.json', 'pyproject.toml', 'cargo.toml', 'go.mod', 'pom.xml', 'makefile'].includes(base)) return 1;
+  if (/^(src|lib|app|packages|services|cmd)\//i.test(relPath)) return 2;
+  return 3;
+}
+
+function buildRepoCard(repoName, filesWithContent, languages, keyFiles) {
+  const parts = [`Repository: ${repoName}`];
+  if (languages.length) parts.push(`Languages: ${languages.join(', ')}`);
+  if (keyFiles.length) parts.push(`Key files: ${keyFiles.slice(0, 12).join(', ')}`);
+
+  const readme = filesWithContent.find((f) => /^readme/i.test(path.basename(f.relPath)));
+  if (readme && readme.text) {
+    const cleaned = readme.text.replace(/\s+/g, ' ').trim();
+    if (cleaned) parts.push(`Overview: ${cleaned}`);
+  }
+  const pkgFile = filesWithContent.find((f) => path.basename(f.relPath).toLowerCase() === 'package.json');
+  if (pkgFile && pkgFile.text) {
+    try {
+      const pkg = JSON.parse(pkgFile.text);
+      const deps = Object.keys({ ...(pkg.dependencies || {}), ...(pkg.devDependencies || {}) }).slice(0, 12);
+      if (deps.length) parts.push(`Dependencies: ${deps.join(', ')}`);
+    } catch (_) {
+      // Malformed package.json does not block card assembly.
+    }
+  }
+
+  let summary = parts.join('\n');
+  if (summary.length > 1200) {
+    summary = summary.slice(0, 1197).trimEnd() + '...';
+  }
+  return {
+    summary,
+    languages,
+    keyFiles: keyFiles.slice(0, 12)
+  };
+}
+
+async function indexRepository(rootPath, prevRepoRecord = null, opts = {}) {
+  const repoId = opts.id || (prevRepoRecord && prevRepoRecord.id) || `repo_${crypto.randomBytes(6).toString('hex')}`;
+  const repoName = opts.name || path.basename(rootPath);
+  const maxDiscovery = opts.maxDiscoveredEntries || MAX_DISCOVERED_ENTRIES;
+  const maxFiles = opts.maxFiles || MAX_REPO_FILES;
+
+  if (!rootPath || !fs.existsSync(rootPath)) {
+    return {
+      id: repoId,
+      rootPath,
+      name: repoName,
+      status: 'error',
+      error: `Repository path not found: ${rootPath}`,
+      indexedAt: Date.now(),
+      headSha: null,
+      fileCount: 0,
+      fileMtimes: {},
+      card: { summary: '', languages: [], keyFiles: [] },
+      chunks: []
+    };
+  }
+
+  const realRoot = await fs.promises.realpath(rootPath);
+  const visitedRealDirs = new Set([realRoot]);
+  const { ignoreDirs, ignoreExts, ignoreNames } = parseTopGitignore(realRoot);
+  const headSha = readGitHeadSha(realRoot);
+
+  const discovered = [];
+  let visitedEntries = 0;
+
+  async function walk(relDir) {
+    if (discovered.length >= maxDiscovery) return;
+    const absDir = relDir ? path.join(realRoot, relDir) : realRoot;
+    let entries;
+    try {
+      entries = await fs.promises.readdir(absDir, { withFileTypes: true });
+    } catch (_) {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (discovered.length >= maxDiscovery) break;
+      visitedEntries++;
+      if (visitedEntries % WALK_YIELD_EVERY === 0) {
+        await new Promise((resolve) => setImmediate(resolve));
+      }
+
+      const name = entry.name;
+      const lowerName = name.toLowerCase();
+      const relPosix = relDir ? `${relDir}/${name}` : name;
+
+      if (EXCLUDED_DIRS.has(lowerName) || ignoreDirs.has(name) || ignoreDirs.has(relPosix)) continue;
+      if (EXCLUDED_FILES.has(lowerName) || ignoreNames.has(name) || ignoreNames.has(relPosix)) continue;
+      if (lowerName.endsWith('.min.js') || lowerName.endsWith('.min.css')) continue;
+
+      const absEntry = path.join(absDir, name);
+      let realEntry;
+      try {
+        realEntry = await fs.promises.realpath(absEntry);
+      } catch (_) {
+        continue;
+      }
+      if (!isInsideCanonicalRoot(realEntry, realRoot)) continue;
+
+      let stat;
+      try {
+        stat = await fs.promises.stat(realEntry);
+      } catch (_) {
+        continue;
+      }
+
+      if (stat.isDirectory()) {
+        if (visitedRealDirs.has(realEntry)) continue;
+        visitedRealDirs.add(realEntry);
+        await walk(relPosix);
+      } else if (stat.isFile()) {
+        if (stat.size === 0 || stat.size > MAX_REPO_FILE_BYTES) continue;
+        const ext = path.extname(lowerName);
+        if (EXCLUDED_REPO_EXTS.has(ext) || ignoreExts.has(ext)) continue;
+        discovered.push({ relPath: relPosix, absPath: realEntry, mtimeMs: Math.trunc(stat.mtimeMs) });
+      }
+    }
+  }
+
+  await walk('');
+
+  discovered.sort((a, b) => {
+    const pa = foragePriority(a.relPath);
+    const pb = foragePriority(b.relPath);
+    if (pa !== pb) return pa - pb;
+    return a.relPath.localeCompare(b.relPath);
+  });
+
+  const selectedFiles = discovered.slice(0, maxFiles);
+  const prevMtimes = (prevRepoRecord && prevRepoRecord.fileMtimes) || {};
+  const prevChunksByPath = new Map();
+  if (prevRepoRecord && Array.isArray(prevRepoRecord.chunks)) {
+    for (const c of prevRepoRecord.chunks) {
+      if (!c.relPath) continue;
+      let list = prevChunksByPath.get(c.relPath);
+      if (!list) {
+        list = [];
+        prevChunksByPath.set(c.relPath, list);
+      }
+      list.push(c);
+    }
+  }
+
+  const nextMtimes = {};
+  const allChunks = [];
+  const languageSet = new Set();
+  const cardTextSamples = [];
+  let indexedCount = 0;
+
+  for (let i = 0; i < selectedFiles.length; i++) {
+    if (i > 0 && i % WALK_YIELD_EVERY === 0) {
+      await new Promise((resolve) => setImmediate(resolve));
+    }
+    const item = selectedFiles[i];
+    const ext = path.extname(item.relPath).toLowerCase();
+    if (EXT_LANGUAGES[ext]) languageSet.add(EXT_LANGUAGES[ext]);
+
+    if (prevMtimes[item.relPath] === item.mtimeMs && prevChunksByPath.has(item.relPath)) {
+      const reused = prevChunksByPath.get(item.relPath);
+      nextMtimes[item.relPath] = item.mtimeMs;
+      indexedCount++;
+      allChunks.push(...reused);
+      if (foragePriority(item.relPath) <= 1 && reused.length) {
+        cardTextSamples.push({ relPath: item.relPath, text: reused.map((r) => r.text).join('\n') });
+      }
+      continue;
+    }
+
+    let buf;
+    try {
+      buf = await fs.promises.readFile(item.absPath);
+    } catch (_) {
+      continue;
+    }
+    if (isProbablyBinary(buf)) continue;
+    const text = decodeTextBuffer(buf).trim();
+    if (!text) continue;
+
+    nextMtimes[item.relPath] = item.mtimeMs;
+    indexedCount++;
+    if (foragePriority(item.relPath) <= 1) {
+      cardTextSamples.push({ relPath: item.relPath, text });
+    }
+    const fileChunks = chunkText(text, {
+      sourceId: repoId,
+      sourceLabel: `${repoName}/${item.relPath}`,
+      sourceKind: 'repo',
+      relPath: item.relPath
+    });
+    allChunks.push(...fileChunks);
+  }
+
+  const languages = Array.from(languageSet);
+  const keyFiles = selectedFiles.slice(0, 12).map((f) => f.relPath);
+  const card =
+    prevRepoRecord &&
+    prevRepoRecord.card &&
+    prevRepoRecord.fileCount === indexedCount &&
+    Object.keys(prevMtimes).length === Object.keys(nextMtimes).length &&
+    Object.keys(nextMtimes).every((k) => prevMtimes[k] === nextMtimes[k])
+      ? prevRepoRecord.card
+      : buildRepoCard(repoName, cardTextSamples, languages, keyFiles);
+
+  return {
+    id: repoId,
+    rootPath: realRoot,
+    name: repoName,
+    status: indexedCount > 0 ? 'ok' : 'warning',
+    error: indexedCount > 0 ? '' : 'No indexable text or source files found in repository.',
+    indexedAt: Date.now(),
+    headSha,
+    fileCount: indexedCount,
+    fileMtimes: nextMtimes,
+    card,
+    chunks: allChunks
+  };
+}
+
 module.exports = {
   TEXT_DOC_EXTS,
   isProbablyBinary,
@@ -297,5 +655,6 @@ module.exports = {
   extractDocumentText,
   tokenizeTerms,
   chunkText,
-  scoreChunks
+  scoreChunks,
+  indexRepository
 };
