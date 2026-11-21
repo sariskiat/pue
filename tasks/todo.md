@@ -148,14 +148,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Implement `src/profile-store.js` backed by `settings-store-core.js` (`<userData>/profile-index.json`, `0600` mode) managing global documents, repos, `seedFromLegacy()`, `listAllowedRoots()`, and human-only `promoteGlobalLesson` / `deprecateGlobalLesson`. Wire `profile:get`, `profile:pick-doc`, `profile:pick-repo`, `profile:remove-item`, `profile:reindex`, and `profile:deprecate-lesson` in `main.js` and `preload.js`.
 
 **Acceptance criteria:**
-- [ ] Adding, re-indexing, and removing documents and repos persists across store reloads and updates `listAllowedRoots()` immediately.
-- [ ] `promoteGlobalLesson` and `deprecateGlobalLesson` manage lesson status (`accepted`, `deprecated`, `superseded`) without deleting history.
-- [ ] `preload.js` and `main.js` expose all six `profile:*` channels cleanly.
+- [x] Adding, re-indexing, and removing documents and repos persists across store reloads and updates `listAllowedRoots()` immediately.
+- [x] `promoteGlobalLesson` and `deprecateGlobalLesson` manage lesson status (`accepted`, `deprecated`, `superseded`) without deleting history.
+- [x] `preload.js` and `main.js` expose all six `profile:*` channels cleanly.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/profile-store.test.js && npm test`
-- [ ] Build succeeds: `node verify.js`
-- [ ] Manual check: Confirm `profile-index.json` writes with `0600` permissions in temp test dir.
+- [x] Tests pass: `node --test test/profile-store.test.js && npm test`
+- [x] Build succeeds: `node verify.js`
+- [x] Manual check: Confirm `profile-index.json` writes with `0600` permissions in temp test dir.
 
 **Dependencies:** Task 5
 
@@ -170,9 +170,9 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 ---
 
 ## Checkpoint 2: After Tasks 4-6 (`profile-repo-index` complete)
-- [ ] All unit tests pass (`npm test`)
-- [ ] Repo walker handles symlinks, binaries, and incremental refresh within bounds
-- [ ] `profile-index.json` persistence and legacy seeding verified
+- [x] All unit tests pass (`npm test`)
+- [x] Repo walker handles symlinks, binaries, and incremental refresh within bounds
+- [x] `profile-index.json` persistence and legacy seeding verified
 
 ---
 

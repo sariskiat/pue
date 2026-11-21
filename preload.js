@@ -28,6 +28,12 @@ contextBridge.exposeInMainWorld('cue', {
   slidesClear: () => ipcRenderer.invoke('slides:clear'),
   openPane: (url) => ipcRenderer.send('open-pane', url),
   pickProfileDocument: () => ipcRenderer.invoke('profile:pickDocument'),
+  profileGet: () => ipcRenderer.invoke('profile:get'),
+  profileAddDoc: (kind) => ipcRenderer.invoke('profile:pick-doc', kind),
+  profileAddRepo: () => ipcRenderer.invoke('profile:pick-repo'),
+  profileRemoveItem: (id) => ipcRenderer.invoke('profile:remove-item', id),
+  profileReindex: () => ipcRenderer.invoke('profile:reindex'),
+  profileDeprecateLesson: (id) => ipcRenderer.invoke('profile:deprecate-lesson', id),
   quit: () => ipcRenderer.send('app:quit'),
   permissionsCheck: () => ipcRenderer.invoke('permissions:check'),
   permissionsRequest: () => ipcRenderer.invoke('permissions:request'),
@@ -51,7 +57,8 @@ contextBridge.exposeInMainWorld('cue', {
       'hide:toggle',
       'whisper:download-progress',
       'whisper:models-changed',
-      'slides:update'
+      'slides:update',
+      'profile:changed'
     ];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));

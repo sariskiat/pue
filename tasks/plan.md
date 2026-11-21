@@ -53,8 +53,8 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 ### Phase 2: Global Profile & Repo Index (`profile-repo-index`)
 - [x] Task 4: Build document extractor, unified chunker, and hybrid RRF scorer in `src/repo-indexer.js` (`SPEC-profile-repo-index.md`)
 - [x] Task 5: Add hardened async repo walker and incremental `fileMtimes` / `headSha` refresh (`SPEC-profile-repo-index.md`)
-- [ ] Task 6: Build persistent `src/profile-store.js` and wire `profile:*` IPC (`SPEC-profile-repo-index.md`)
-- [ ] Checkpoint 2: Global profile indexes documents and repos locally and passes all tests
+- [x] Task 6: Build persistent `src/profile-store.js` and wire `profile:*` IPC (`SPEC-profile-repo-index.md`)
+- [x] Checkpoint 2: Global profile indexes documents and repos locally and passes all tests
 
 ### Phase 3: Job Workspaces & Session Dissection (`job-workspaces`)
 - [ ] Task 7: Build sharded `src/workspace-store.js` and append-only round JSONL ledger (`SPEC-job-workspaces.md`)

@@ -15,6 +15,15 @@ const { rms16 } = require('./src/wav');
 const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
+const { createProfileStore } = require('./src/profile-store');
+
+let profileStore = null;
+function getProfileStore() {
+  if (!profileStore) {
+    profileStore = createProfileStore(() => app.getPath('userData'));
+  }
+  return profileStore;
+}
 
 function recordEvent(ev) {
   if (ev && (ev.level === 'error' || ev.level === 'fatal')) {
@@ -1100,6 +1109,49 @@ ipcMain.handle('profile:pickDocument', async () => {
   } catch (e) {
     return { canceled: false, error: (e && e.message) || String(e) };
   }
+});
+ipcMain.handle('profile:get', () => getProfileStore().getProfileSummary());
+ipcMain.handle('profile:pick-doc', async (_e, kind = 'experience') => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Attach Experience or Resume File',
+    properties: ['openFile', 'multiSelections'],
+    filters: [{ name: 'Documents', extensions: ['pdf', 'docx', 'md', 'txt', 'json', 'yaml', 'yml'] }]
+  });
+  if (res.canceled || !res.filePaths.length) return { canceled: true };
+  for (const fp of res.filePaths) {
+    await getProfileStore().addDocument(fp, kind);
+  }
+  const summary = getProfileStore().getProfileSummary();
+  send('profile:changed', summary);
+  return { canceled: false, profile: summary };
+});
+ipcMain.handle('profile:pick-repo', async () => {
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Attach Local Code Repository',
+    properties: ['openDirectory']
+  });
+  if (res.canceled || !res.filePaths[0]) return { canceled: true };
+  await getProfileStore().addRepo(res.filePaths[0]);
+  const summary = getProfileStore().getProfileSummary();
+  send('profile:changed', summary);
+  return { canceled: false, profile: summary };
+});
+ipcMain.handle('profile:remove-item', (_e, id) => {
+  getProfileStore().removeItem(id);
+  const summary = getProfileStore().getProfileSummary();
+  send('profile:changed', summary);
+  return summary;
+});
+ipcMain.handle('profile:reindex', async () => {
+  const summary = await getProfileStore().reindexAll();
+  send('profile:changed', summary);
+  return summary;
+});
+ipcMain.handle('profile:deprecate-lesson', (_e, id) => {
+  getProfileStore().deprecateGlobalLesson(id);
+  const summary = getProfileStore().getProfileSummary();
+  send('profile:changed', summary);
+  return summary;
 });
 ipcMain.on('app:quit', () => app.quit());
 
