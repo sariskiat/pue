@@ -14,13 +14,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Copy the cloned `Blueturboguy07/cue` tree into `/Users/saris.kia.adm/Desktop/pue` without overwriting `SPEC*.md`, `docs/intent/`, or `tasks/`. Remove the starter `main.py`, build a rule-based delete manifest with asserted count to remove standalone `publik`, `updater`, and `applink` files/scripts/tests, update `package.json` metadata (`name: "pue"`), and install dependencies.
 
 **Acceptance criteria:**
-- [ ] `main.py`, `vendor/app-link`, `publik-updater.cjs`, `publik-update-verify.cjs`, `renderer/publik-card.js`, `src/publik*.js`, `src/publik-build.json`, `src/publik-gate-preload.cjs`, `src/applink*.js`, and `publik`/`updater`/`applink` test files are absent, verified by a rule-built count check before deletion.
-- [ ] `npm install` completes cleanly and `SPEC*.md`, `docs/intent/`, and `tasks/` remain intact.
+- [x] `main.py`, `vendor/app-link`, `publik-updater.cjs`, `publik-update-verify.cjs`, `renderer/publik-card.js`, `src/publik*.js`, `src/publik-build.json`, `src/publik-gate-preload.cjs`, `src/applink*.js`, and `publik`/`updater`/`applink` test files are absent, verified by a rule-built count check before deletion.
+- [x] `npm install` completes cleanly and `SPEC*.md`, `docs/intent/`, and `tasks/` remain intact.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/core-fork-layout.test.js`
-- [ ] Build succeeds: `npm ls --depth=0`
-- [ ] Manual check: Confirm `ls` shows `cue` codebase with `pue` `package.json` and zero standalone `publik*` or `applink*` files.
+- [x] Tests pass: `node --test test/core-fork-layout.test.js`
+- [x] Build succeeds: `npm ls --depth=0`
+- [x] Manual check: Confirm `ls` shows `cue` codebase with `pue` `package.json` and zero standalone `publik*` or `applink*` files.
 
 **Dependencies:** None
 

@@ -1,3 +1,17 @@
 .idea/
 node_modules/
 dist/
+out/
+.cache/
+native/systemaudio
+*.log
+.DS_Store
+cue-data.json
+profile-index.json
+workspaces/
+*.env
+.env*
+test-stt-connection.js
+test-resume.js
+.kiro/
+node_modules/electron/dist/electron.exe.bak
