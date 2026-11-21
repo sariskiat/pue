@@ -288,13 +288,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Implement `src/repo-tools.js` exporting `TOOL_DEFINITIONS`, hardened `resolveScopedPath(requestedPath, allowedRoots)` (handling non-existent leaf targets via nearest-existing-ancestor canonicalization, skipping deleted roots safely, blocking `../` and symlink escapes, normalizing Windows case), and `createScopedToolbox(allowedRoots)` with `list_files` (cap 60), `grep_files` (cap 25), and `read_file` (cap 200 lines / 8,000 chars) wrapped in `<untrusted_context>`.
 
 **Acceptance criteria:**
-- [ ] `resolveScopedPath` blocks `../etc/passwd`, absolute paths outside `allowedRoots`, and symlinks escaping `allowedRoots`, while safely skipping deleted root directories without crashing.
-- [ ] `list_files`, `grep_files`, and `read_file` enforce their entry/match/line/char caps and wrap outputs in `<untrusted_context source="...">`.
+- [x] `resolveScopedPath` blocks `../etc/passwd`, absolute paths outside `allowedRoots`, and symlinks escaping `allowedRoots`, while safely skipping deleted root directories without crashing.
+- [x] `list_files`, `grep_files`, and `read_file` enforce their entry/match/line/char caps and wrap outputs in `<untrusted_context source="...">`.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/repo-tools.test.js`
-- [ ] Build succeeds: `node --check src/repo-tools.js`
-- [ ] Manual check: Verify zero write/exec/spawn imports exist in `src/repo-tools.js`.
+- [x] Tests pass: `node --test test/repo-tools.test.js`
+- [x] Build succeeds: `node --check src/repo-tools.js`
+- [x] Manual check: Verify zero write/exec/spawn imports exist in `src/repo-tools.js`.
 
 **Dependencies:** Task 6, Task 7
 

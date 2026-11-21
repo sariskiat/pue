@@ -64,7 +64,7 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 
 ### Phase 4: Two-Speed Context & Bounded Tools (`two-speed-context`)
 - [x] Task 10: Build U-shaped 4-tier `src/context-triage.js`, `transformContext` compaction, and grounding rules (`SPEC-two-speed-context.md`)
-- [ ] Task 11: Build path-jailed read-only `src/repo-tools.js` (`SPEC-two-speed-context.md`)
+- [x] Task 11: Build path-jailed read-only `src/repo-tools.js` (`SPEC-two-speed-context.md`)
 - [ ] Task 12: Add per-provider streaming tool loop to `src/llm.js` and wire `main.js` + `preload.js` (`SPEC-two-speed-context.md`)
 - [ ] Checkpoint 4: Fast Path (`< 20ms` triage) and Deep Path (bounded 4-round tool loop + fallback) pass all tests
 
