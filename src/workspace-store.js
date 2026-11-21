@@ -3,9 +3,12 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { createFileStore } = require('./settings-store-core');
 const { extractDocumentText, chunkText, indexRepository } = require('./repo-indexer');
+const { buildDissectionPrompt, parseDissection } = require('./round-dissector');
 
 const MAX_SCAN_ENTRIES = 2000;
 const MAX_QA_TURNS_IN_RAM = 20;
+const MIN_TURNS_FOR_DISSECTION = 4;
+const RESUME_WINDOW_MS = 30 * 60 * 1000;
 
 function defaultAppendLine(filePath, content, isNew) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
@@ -660,6 +663,237 @@ function createWorkspaceStore(resolveUserDataDir, opts = {}) {
     return true;
   }
 
+  function failureJournalPath(wsId) {
+    return path.join(workspacesRoot(), wsId, 'failure-journal.jsonl');
+  }
+
+  function appendJournalEntry(wsId, record) {
+    const filePath = failureJournalPath(wsId);
+    const isNew = !fs.existsSync(filePath);
+    appendLineFn(filePath, JSON.stringify(record) + '\n', isNew);
+  }
+
+  function listFailureJournal(wsId) {
+    const filePath = failureJournalPath(wsId);
+    const facts = [];
+    const lessonsById = new Map();
+    const decisions = [];
+    if (!fs.existsSync(filePath)) return { facts, lessons: [], decisions };
+
+    const lines = fs.readFileSync(filePath, 'utf8').split(/\r?\n/).filter(Boolean);
+    for (const line of lines) {
+      try {
+        const entry = JSON.parse(line);
+        if (entry.type === 'failure_fact') {
+          facts.push(entry);
+        } else if (entry.type === 'candidate_lesson') {
+          lessonsById.set(entry.id, { ...entry });
+        } else if (entry.type === 'lesson_decision') {
+          decisions.push(entry);
+          const target = lessonsById.get(entry.targetLessonId);
+          if (target) {
+            if (entry.decision === 'accept_workspace') target.status = 'accepted';
+            else if (entry.decision === 'promote_global') target.status = 'promoted';
+            else if (entry.decision === 'dismiss') target.status = 'dismissed';
+            else if (entry.decision === 'supersede') target.status = 'superseded';
+          }
+        }
+      } catch (_) {
+        // Ignore truncated trailing line.
+      }
+    }
+    return { facts, lessons: Array.from(lessonsById.values()), decisions };
+  }
+
+  // Gate all L1 candidate lessons behind explicit human decision before prompt admission.
+  function decideCandidateLesson(wsId, lessonId, decision, { profileStore, supersedesId = null } = {}) {
+    const ws = getWorkspace(wsId);
+    if (!ws) throw new Error(`Workspace not found: ${wsId}`);
+    const journal = listFailureJournal(wsId);
+    const lesson = journal.lessons.find((l) => l.id === lessonId);
+    if (!lesson) throw new Error(`Candidate lesson not found: ${lessonId}`);
+
+    const ts = now();
+    appendJournalEntry(wsId, {
+      type: 'lesson_decision',
+      targetLessonId: lessonId,
+      decision,
+      supersedesId,
+      ts
+    });
+
+    if (decision === 'accept_workspace') {
+      if (supersedesId) {
+        const old = ws.admittedLessons.find((l) => l.id === supersedesId);
+        if (old) old.status = 'superseded';
+      }
+      const admitted = {
+        id: `wles_${crypto.randomBytes(6).toString('hex')}`,
+        lessonId: lesson.id,
+        factId: lesson.factId || null,
+        guidance: lesson.proposedFix,
+        admittedAt: ts,
+        status: 'accepted',
+        supersedesId
+      };
+      ws.admittedLessons.push(admitted);
+      ws.updatedAt = ts;
+      scheduleWorkspaceSave(wsId, true);
+      return admitted;
+    }
+
+    if (decision === 'promote_global') {
+      if (!profileStore || typeof profileStore.promoteGlobalLesson !== 'function') {
+        throw new Error('profileStore is required to promote a global lesson.');
+      }
+      return profileStore.promoteGlobalLesson({
+        topic: lesson.failureType || 'interview_lesson',
+        guidance: lesson.proposedFix,
+        sourceWorkspaceId: wsId,
+        supersedesId
+      });
+    }
+
+    return null;
+  }
+
+  async function generateRoundDissection(wsId, roundId, { llmFactory, profile } = {}) {
+    const ws = getWorkspace(wsId);
+    if (!ws) return null;
+    const round = ws.rounds.find((r) => r.id === roundId);
+    if (!round) return null;
+
+    const proj = buildRoundProjection(wsId, roundId);
+    if (proj.rawTranscript.length < MIN_TURNS_FOR_DISSECTION) return null;
+    const llm = typeof llmFactory === 'function' ? llmFactory() : null;
+    if (!llm || !llm.ready) return null;
+
+    const { system, user } = buildDissectionPrompt({
+      roundProjection: proj,
+      workspace: ws,
+      profile: profile || { repos: [], documents: [] }
+    });
+
+    const rawText = await llm.stream({
+      system,
+      turns: [{ role: 'user', text: user }],
+      maxTokens: 1200,
+      lengthCut: 'ellipsis',
+      onToken: () => {}
+    });
+
+    const dissection = parseDissection(rawText);
+    const ts = now();
+
+    const createdFactIds = [];
+    for (const item of dissection.qaReview) {
+      if (item.verdict === 'strong') continue;
+      const factId = `fact_${crypto.randomBytes(6).toString('hex')}`;
+      createdFactIds.push(factId);
+      appendJournalEntry(wsId, {
+        type: 'failure_fact',
+        id: factId,
+        roundId,
+        ts,
+        question: item.question,
+        spokenExcerpt: item.spokenAnswer,
+        copilotExcerpt: item.copilotSuggestion,
+        interviewerPushback: item.gapWhy,
+        failureType: item.verdict === 'unverified_claim' ? 'unverified_claim' : 'technical_gap'
+      });
+    }
+
+    for (let i = 0; i < dissection.proposedLessons.length; i++) {
+      const prop = dissection.proposedLessons[i];
+      appendJournalEntry(wsId, {
+        type: 'candidate_lesson',
+        id: `cles_${crypto.randomBytes(6).toString('hex')}`,
+        factId: createdFactIds[i] || createdFactIds[0] || null,
+        roundId,
+        ts,
+        failureType: prop.failureType,
+        proposedFix: prop.proposedFix,
+        suggestedScope: prop.suggestedScope,
+        status: 'proposed'
+      });
+    }
+
+    appendRoundEvent(wsId, roundId, { type: 'dissection', dissection, ts });
+    round.dissection = dissection;
+    round.status = 'dissected';
+    if (
+      dissection.nextRoundCheckpoint &&
+      Array.isArray(dissection.nextRoundCheckpoint.openWeaknessesToRepair) &&
+      dissection.nextRoundCheckpoint.openWeaknessesToRepair.length
+    ) {
+      ws.prepBrief = {
+        ...emptyPrepBrief(),
+        ...ws.prepBrief,
+        priorRoundFocus: dissection.nextRoundCheckpoint.openWeaknessesToRepair.slice()
+      };
+    }
+    ws.updatedAt = ts;
+    scheduleWorkspaceSave(wsId, true);
+    return dissection;
+  }
+
+  async function endRound(wsId, roundId, { llmFactory, profile } = {}) {
+    const ws = getWorkspace(wsId);
+    if (!ws) throw new Error(`Workspace not found: ${wsId}`);
+    const targetId = roundId || ws.activeRoundId;
+    const round = ws.rounds.find((r) => r.id === targetId);
+    if (!round) throw new Error(`Round not found: ${targetId}`);
+
+    if (!round.endedAt) {
+      round.endedAt = now();
+    }
+    if (round.status === 'open') {
+      round.status = 'ended';
+    }
+    ws.updatedAt = now();
+    scheduleWorkspaceSave(wsId, true);
+
+    try {
+      await generateRoundDissection(wsId, targetId, { llmFactory, profile });
+    } catch (_) {
+      // Keep ended status so catchUpPendingRounds can retry later.
+    }
+    return round;
+  }
+
+  async function catchUpPendingRounds({ llmFactory, profile } = {}) {
+    const idx = loadIndex();
+    let count = 0;
+    const currentNow = now();
+
+    for (const item of idx.items) {
+      const ws = loadWorkspace(item.id);
+      if (!ws) continue;
+      for (const round of ws.rounds) {
+        const proj = buildRoundProjection(ws.id, round.id);
+        const lastTurnTs = proj.rawTranscript.length
+          ? proj.rawTranscript[proj.rawTranscript.length - 1].ts
+          : round.startedAt;
+
+        if (!round.endedAt && proj.rawTranscript.length > 0 && currentNow - lastTurnTs > RESUME_WINDOW_MS) {
+          round.endedAt = lastTurnTs;
+          round.status = 'ended';
+          scheduleWorkspaceSave(ws.id, true);
+        }
+
+        if (round.endedAt && !round.dissection && proj.rawTranscript.length >= MIN_TURNS_FOR_DISSECTION) {
+          try {
+            const d = await generateRoundDissection(ws.id, round.id, { llmFactory, profile });
+            if (d) count++;
+          } catch (_) {
+            // Best-effort startup recovery.
+          }
+        }
+      }
+    }
+    return count;
+  }
+
   return {
     listWorkspaces,
     getWorkspace,
@@ -675,6 +909,11 @@ function createWorkspaceStore(resolveUserDataDir, opts = {}) {
     setActiveRound,
     updateRoundMeta,
     clearRoundTranscript,
+    endRound,
+    generateRoundDissection,
+    catchUpPendingRounds,
+    listFailureJournal,
+    decideCandidateLesson,
     appendRoundEvent,
     buildRoundProjection,
     workspaceMemoryBlock,

@@ -230,13 +230,13 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Implement `src/round-dissector.js` (`buildDissectionPrompt`, `parseDissection`) and wire `endRound`, `resumeWindowMs = 30m`, `catchUpPendingRounds`, `listFailureJournal`, and `decideCandidateLesson` into `src/workspace-store.js`. Dissection compares interviewer questions, copilot suggestions, spoken `"you"` turns, and `PerceptionTrace` drops to write `qaReview`, `missedOpportunities`, `interviewerSignals`, `nextRoundCheckpoint`, L0 `failure_fact`s, and `proposed` L1 `candidate_lesson`s in `failure-journal.jsonl`.
 
 **Acceptance criteria:**
-- [ ] Ending a round with `>= 4` turns writes a parsed `dissection` plus L0 `failure_fact` and L1 `candidate_lesson` (`status: 'proposed'`) entries to `failure-journal.jsonl`.
-- [ ] `proposed` L1 lessons never appear in `workspaceMemoryBlock()` or `admittedLessons` until `decideCandidateLesson(wsId, lessonId, 'accept_workspace')` is invoked; `'promote_global'` delegates cleanly to `profile-store.js`.
+- [x] Ending a round with `>= 4` turns writes a parsed `dissection` plus L0 `failure_fact` and L1 `candidate_lesson` (`status: 'proposed'`) entries to `failure-journal.jsonl`.
+- [x] `proposed` L1 lessons never appear in `workspaceMemoryBlock()` or `admittedLessons` until `decideCandidateLesson(wsId, lessonId, 'accept_workspace')` is invoked; `'promote_global'` delegates cleanly to `profile-store.js`.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/round-dissector.test.js test/workspace-store.test.js && npm test`
-- [ ] Build succeeds: `node --check src/round-dissector.js && node --check src/workspace-store.js`
-- [ ] Manual check: Confirm `catchUpPendingRounds` recovers an unended stale round (`> 30m` old) on reload.
+- [x] Tests pass: `node --test test/round-dissector.test.js test/workspace-store.test.js && npm test`
+- [x] Build succeeds: `node --check src/round-dissector.js && node --check src/workspace-store.js`
+- [x] Manual check: Confirm `catchUpPendingRounds` recovers an unended stale round (`> 30m` old) on reload.
 
 **Dependencies:** Task 7
 
@@ -250,9 +250,9 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 ---
 
 ## Checkpoint 3: After Tasks 7-9 (`job-workspaces` complete)
-- [ ] All unit tests pass (`npm test`)
-- [ ] Zero cross-workspace memory or search leakage
-- [ ] Post-round Dissection and 3-tier Failure Journal human admission gate verified
+- [x] All unit tests pass (`npm test`)
+- [x] Zero cross-workspace memory or search leakage
+- [x] Post-round Dissection and 3-tier Failure Journal human admission gate verified
 
 ---
 
