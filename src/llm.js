@@ -732,6 +732,537 @@ async function streamOllama({ apiKey, model, system, turns, imageDataUrl, maxTok
   return full;
 }
 
+function shouldFallbackFromTools(error) {
+  if (!error) return false;
+  if (isAuthError(error) || isQuotaError(error) || isRateLimitError(error)) return false;
+  const { status, text } = errorSignals(error);
+  if (status === 401 || status === 403 || status === 429) return false;
+  if (status === 400 || status === 404 || status === 422 || status === 501) return true;
+  return /tool|function.?call|not supported|unrecognized|unknown field/i.test(text);
+}
+
+const LEVEL1_CLEAR_THRESHOLD = 1500;
+function formatToolResultForRound(record, currentRound) {
+  if (currentRound - record.roundIndex >= 2 && record.rawContent.length > LEVEL1_CLEAR_THRESHOLD) {
+    return `[Cleared after read: ${record.summary || record.name}; re-read if needed]`;
+  }
+  return record.rawContent;
+}
+
+function toOpenAiTools(tools) {
+  return tools.map((t) => ({
+    type: 'function',
+    function: { name: t.name, description: t.description, parameters: t.parameters }
+  }));
+}
+
+function buildOpenAiClient(provider, { apiKey, baseURL, endpoint, watchDone }, minimaxRegion) {
+  const OpenAI = require('openai');
+  if (provider === 'azure') {
+    const url = normalizeAzureBaseURL(endpoint);
+    if (!url) throw new Error('Missing Azure endpoint. Add your Azure AI Foundry or Azure OpenAI endpoint in Settings.');
+    if (/openai\.azure\.com/i.test(url)) {
+      return { client: new OpenAI.AzureOpenAI({ endpoint: url.replace(/\/openai$/i, ''), apiKey, apiVersion: '2024-10-21' }), isAzure: true };
+    }
+    const azureFetch = async (input, init) => {
+      const headers = new Headers(init && init.headers);
+      headers.set('api-key', apiKey);
+      headers.delete('authorization');
+      return fetch(input, { ...init, headers });
+    };
+    return { client: new OpenAI({ baseURL: url, apiKey, fetch: azureFetch }), isAzure: true };
+  }
+
+  let resolvedBase = baseURL;
+  if (provider === 'groq') resolvedBase = 'https://api.groq.com/openai/v1';
+  else if (provider === 'cerebras') resolvedBase = CEREBRAS_BASE_URL;
+  else if (provider === 'minimax') resolvedBase = MINIMAX_BASE_URLS[minimaxRegion] || MINIMAX_BASE_URLS.global_en;
+  else if (provider === 'deepseek') resolvedBase = DEEPSEEK_BASE_URL;
+
+  const watcher = watchDone ? doneWatcher() : null;
+  const client = new OpenAI({
+    apiKey,
+    ...(resolvedBase ? { baseURL: resolvedBase } : {}),
+    ...(watcher ? { fetch: watcher.fetch } : {})
+  });
+  return { client, isAzure: false };
+}
+
+async function streamOpenAiToolLoop(provider, args, minimaxRegion) {
+  const {
+    model,
+    system,
+    turns,
+    imageDataUrl,
+    maxTokens,
+    tools,
+    executeTool,
+    onToken,
+    onActivity,
+    onToolCall,
+    lengthCut,
+    signal,
+    maxToolRounds = 4
+  } = args;
+
+  const { client, isAzure } = buildOpenAiClient(provider, args, minimaxRegion);
+  const openAiTools = toOpenAiTools(tools);
+
+  const initialMessages = [{ role: 'system', content: system }];
+  turns.forEach((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      initialMessages.push({
+        role: 'user',
+        content: [
+          { type: 'text', text: t.text },
+          { type: 'image_url', image_url: { url: imageDataUrl } }
+        ]
+      });
+    } else {
+      initialMessages.push({ role: t.role, content: t.text });
+    }
+  });
+
+  // Track assistant + tool turns dynamically so Level-1 clearing can compact older tool outputs.
+  const roundRecords = [];
+
+  for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
+    const allowTools = roundIdx < maxToolRounds;
+    const messages = initialMessages.slice();
+    for (const rec of roundRecords) {
+      messages.push(rec.assistantMessage);
+      for (const tr of rec.toolRecords) {
+        messages.push({
+          role: 'tool',
+          tool_call_id: tr.callId,
+          content: formatToolResultForRound(tr, roundIdx)
+        });
+      }
+    }
+    if (!allowTools) {
+      messages.push({
+        role: 'user',
+        content: 'Tool budget reached. Provide your best grounded answer now from the gathered evidence.'
+      });
+    }
+
+    const reqBody = {
+      model,
+      messages,
+      stream: true,
+      ...(isAzure ? { max_completion_tokens: maxTokens } : { max_tokens: maxTokens }),
+      ...(allowTools ? { tools: openAiTools } : {})
+    };
+
+    const stream = await client.chat.completions.create(reqBody, requestOptions(signal));
+    const answer = answerText(onToken);
+    const toolCallMap = new Map();
+    let finish = '';
+
+    for await (const part of stream) {
+      const choice = part && Array.isArray(part.choices) ? part.choices[0] : null;
+      const delta = choice && choice.delta;
+      if (delta && Array.isArray(delta.tool_calls)) {
+        if (typeof onActivity === 'function') onActivity('other');
+        for (const tc of delta.tool_calls) {
+          const idx = tc.index || 0;
+          const prev = toolCallMap.get(idx) || { id: '', name: '', arguments: '' };
+          if (tc.id) prev.id = tc.id;
+          if (tc.function && tc.function.name) prev.name += tc.function.name;
+          if (tc.function && typeof tc.function.arguments === 'string') prev.arguments += tc.function.arguments;
+          toolCallMap.set(idx, prev);
+        }
+      }
+      const chunk = readChunk(part, onActivity);
+      if (chunk.text) answer.add(chunk.text);
+      if (chunk.finish) finish = chunk.finish;
+    }
+
+    const toolCalls = Array.from(toolCallMap.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, v], idx) => ({
+        id: v.id || `call_${roundIdx}_${idx}`,
+        name: v.name,
+        arguments: v.arguments || '{}'
+      }))
+      .filter((tc) => tc.name);
+
+    if (allowTools && toolCalls.length > 0) {
+      const assistantMessage = {
+        role: 'assistant',
+        content: null,
+        tool_calls: toolCalls.map((tc) => ({
+          id: tc.id,
+          type: 'function',
+          function: {
+            name: tc.name,
+            arguments: LENGTH_STOPS.has(String(finish || '').toLowerCase()) ? '{}' : tc.arguments
+          }
+        }))
+      };
+
+      const toolRecords = [];
+      const isTruncated = LENGTH_STOPS.has(String(finish || '').toLowerCase());
+      for (const tc of toolCalls) {
+        if (isTruncated) {
+          toolRecords.push({
+            roundIndex: roundIdx,
+            callId: tc.id,
+            name: tc.name,
+            summary: `${tc.name} (truncated)`,
+            rawContent:
+              '[Tool call truncated because output hit max_tokens; request a smaller file range or answer directly from current evidence.]'
+          });
+          continue;
+        }
+        let parsedArgs = {};
+        try {
+          parsedArgs = JSON.parse(tc.arguments || '{}');
+        } catch (_) {
+          toolRecords.push({
+            roundIndex: roundIdx,
+            callId: tc.id,
+            name: tc.name,
+            summary: `${tc.name} (invalid JSON)`,
+            rawContent: '[Invalid JSON arguments in tool call; retry with valid JSON.]'
+          });
+          continue;
+        }
+        if (typeof onToolCall === 'function') {
+          try {
+            onToolCall({ name: tc.name, args: parsedArgs, round: roundIdx });
+          } catch (_) {}
+        }
+        const res = await executeTool(tc.name, parsedArgs);
+        toolRecords.push({
+          roundIndex: roundIdx,
+          callId: tc.id,
+          name: tc.name,
+          summary: (res && res.summary) || tc.name,
+          rawContent: String((res && res.content) || '')
+        });
+      }
+      roundRecords.push({ assistantMessage, toolRecords });
+      continue;
+    }
+
+    const cutShort = !!(signal && signal.aborted);
+    return settleAnswer(answer.finish(finish, { cutShort }), onToken, lengthCut);
+  }
+
+  throw new Error(EMPTY_ANSWER_MESSAGE);
+}
+
+async function streamAnthropicToolLoop(args) {
+  const {
+    apiKey,
+    model,
+    system,
+    turns,
+    imageDataUrl,
+    maxTokens,
+    tools,
+    executeTool,
+    onToken,
+    onActivity,
+    onToolCall,
+    lengthCut,
+    signal,
+    maxToolRounds = 4
+  } = args;
+
+  const Anthropic = require('@anthropic-ai/sdk');
+  const client = new Anthropic({ apiKey });
+  const anthropicTools = tools.map((t) => ({
+    name: t.name,
+    description: t.description,
+    input_schema: t.parameters
+  }));
+
+  const initialMessages = turns.map((t, i) => {
+    const last = i === turns.length - 1;
+    if (last && imageDataUrl && t.role === 'user') {
+      const img = stripDataUrl(imageDataUrl);
+      const content = [];
+      if (img) content.push({ type: 'image', source: { type: 'base64', media_type: img.mime, data: img.b64 } });
+      content.push({ type: 'text', text: t.text });
+      return { role: 'user', content };
+    }
+    return { role: t.role, content: t.text };
+  });
+
+  const roundRecords = [];
+
+  for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
+    const allowTools = roundIdx < maxToolRounds;
+    const messages = initialMessages.slice();
+    for (const rec of roundRecords) {
+      messages.push(rec.assistantMessage);
+      messages.push({
+        role: 'user',
+        content: rec.toolRecords.map((tr) => ({
+          type: 'tool_result',
+          tool_use_id: tr.callId,
+          content: formatToolResultForRound(tr, roundIdx)
+        }))
+      });
+    }
+    if (!allowTools) {
+      messages.push({ role: 'user', content: 'Tool budget reached. Answer directly now.' });
+    }
+
+    const reqBody = {
+      model,
+      max_tokens: maxTokens,
+      system,
+      messages,
+      stream: true,
+      ...(allowTools ? { tools: anthropicTools } : {})
+    };
+
+    const stream = await client.messages.create(reqBody, requestOptions(signal));
+    const answer = answerText(onToken);
+    const toolBlocks = new Map();
+    let stop = '';
+    let ended = false;
+
+    for await (const ev of stream) {
+      if (ev.type === 'content_block_start' && ev.content_block && ev.content_block.type === 'tool_use') {
+        if (typeof onActivity === 'function') onActivity('other');
+        toolBlocks.set(ev.index, {
+          id: ev.content_block.id,
+          name: ev.content_block.name,
+          initialInput: ev.content_block.input,
+          jsonText: ''
+        });
+      } else if (ev.type === 'content_block_delta' && ev.delta) {
+        if (ev.delta.type === 'text_delta') {
+          if (typeof onActivity === 'function') onActivity('text');
+          answer.add(ev.delta.text);
+        } else if (ev.delta.type === 'input_json_delta' && toolBlocks.has(ev.index)) {
+          if (typeof onActivity === 'function') onActivity('other');
+          toolBlocks.get(ev.index).jsonText += ev.delta.partial_json || '';
+        }
+      } else if (ev.type === 'message_delta' && ev.delta && ev.delta.stop_reason) {
+        stop = ev.delta.stop_reason;
+      } else if (ev.type === 'message_stop') {
+        ended = true;
+      }
+    }
+
+    const toolCalls = Array.from(toolBlocks.entries())
+      .sort((a, b) => a[0] - b[0])
+      .map(([, b]) => b);
+
+    if (allowTools && toolCalls.length > 0) {
+      const isTruncated = LENGTH_STOPS.has(String(stop || '').toLowerCase());
+      const assistantContent = [];
+      const toolRecords = [];
+
+      for (const tc of toolCalls) {
+        let parsedInput = tc.initialInput && Object.keys(tc.initialInput).length ? tc.initialInput : {};
+        if (!isTruncated && tc.jsonText.trim()) {
+          try {
+            parsedInput = JSON.parse(tc.jsonText);
+          } catch (_) {
+            parsedInput = {};
+          }
+        }
+        assistantContent.push({ type: 'tool_use', id: tc.id, name: tc.name, input: parsedInput });
+
+        if (isTruncated) {
+          toolRecords.push({
+            roundIndex: roundIdx,
+            callId: tc.id,
+            name: tc.name,
+            summary: `${tc.name} (truncated)`,
+            rawContent: '[Tool call truncated because output hit max_tokens; request a smaller slice.]'
+          });
+          continue;
+        }
+        if (typeof onToolCall === 'function') {
+          try {
+            onToolCall({ name: tc.name, args: parsedInput, round: roundIdx });
+          } catch (_) {}
+        }
+        const res = await executeTool(tc.name, parsedInput);
+        toolRecords.push({
+          roundIndex: roundIdx,
+          callId: tc.id,
+          name: tc.name,
+          summary: (res && res.summary) || tc.name,
+          rawContent: String((res && res.content) || '')
+        });
+      }
+
+      roundRecords.push({ assistantMessage: { role: 'assistant', content: assistantContent }, toolRecords });
+      continue;
+    }
+
+    return settleAnswer(answer.finish(stop, { cutShort: !ended || !!(signal && signal.aborted) }), onToken, lengthCut);
+  }
+
+  throw new Error(EMPTY_ANSWER_MESSAGE);
+}
+
+async function streamGeminiToolLoop(args) {
+  const {
+    apiKey,
+    model,
+    system,
+    turns,
+    imageDataUrl,
+    maxTokens,
+    thinking,
+    tools,
+    executeTool,
+    onToken,
+    onActivity,
+    onToolCall,
+    lengthCut,
+    signal,
+    maxToolRounds = 4
+  } = args;
+
+  const { GoogleGenAI } = require('@google/genai');
+  const ai = new GoogleGenAI({ apiKey });
+
+  const initialContents = turns.map((t, i) => {
+    const last = i === turns.length - 1;
+    const parts = [{ text: t.text }];
+    if (last && imageDataUrl && t.role === 'user') {
+      const img = stripDataUrl(imageDataUrl);
+      if (img) parts.push({ inlineData: { mimeType: img.mime, data: img.b64 } });
+    }
+    return { role: t.role === 'assistant' ? 'model' : 'user', parts };
+  });
+
+  const roundRecords = [];
+
+  for (let roundIdx = 0; roundIdx <= maxToolRounds; roundIdx++) {
+    const allowTools = roundIdx < maxToolRounds;
+    const contents = initialContents.slice();
+    for (const rec of roundRecords) {
+      contents.push(rec.modelTurn);
+      contents.push({
+        role: 'user',
+        parts: rec.toolRecords.map((tr) => ({
+          functionResponse: {
+            name: tr.name,
+            response: { result: formatToolResultForRound(tr, roundIdx) }
+          }
+        }))
+      });
+    }
+    if (!allowTools) {
+      contents.push({ role: 'user', parts: [{ text: 'Tool budget reached. Answer directly now.' }] });
+    }
+
+    const config = geminiGenerationConfig({ system, maxTokens, thinking });
+    if (signal) config.abortSignal = signal;
+    if (allowTools) {
+      config.tools = [
+        {
+          functionDeclarations: tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters
+          }))
+        }
+      ];
+    }
+
+    let stream;
+    try {
+      stream = await ai.models.generateContentStream({ model, contents, config });
+    } catch (e) {
+      if (!config.thinkingConfig || !/thinking/i.test((e && e.message) || '')) throw e;
+      delete config.thinkingConfig;
+      stream = await ai.models.generateContentStream({ model, contents, config });
+    }
+
+    const answer = answerText(onToken);
+    const functionCalls = [];
+    let stop = '';
+
+    for await (const chunk of stream) {
+      const candidate = chunk && Array.isArray(chunk.candidates) ? chunk.candidates[0] : null;
+      const parts = (candidate && candidate.content && candidate.content.parts) || [];
+      for (const p of parts) {
+        if (p && p.functionCall) {
+          if (typeof onActivity === 'function') onActivity('other');
+          functionCalls.push(p.functionCall);
+        }
+      }
+      const t = chunk && chunk.text;
+      if (t) {
+        if (typeof onActivity === 'function') onActivity('text');
+        answer.add(t);
+      }
+      if (candidate && candidate.finishReason) stop = candidate.finishReason;
+      else if (!stop && chunk && chunk.promptFeedback && chunk.promptFeedback.blockReason) stop = 'SAFETY';
+    }
+
+    if (allowTools && functionCalls.length > 0) {
+      const isTruncated = LENGTH_STOPS.has(String(stop || '').toLowerCase());
+      const modelTurn = {
+        role: 'model',
+        parts: functionCalls.map((fc) => ({ functionCall: { name: fc.name, args: fc.args || {} } }))
+      };
+      const toolRecords = [];
+
+      for (const fc of functionCalls) {
+        if (isTruncated) {
+          toolRecords.push({
+            roundIndex: roundIdx,
+            name: fc.name,
+            summary: `${fc.name} (truncated)`,
+            rawContent: '[Tool call truncated because output hit max_tokens.]'
+          });
+          continue;
+        }
+        const callArgs = fc.args || {};
+        if (typeof onToolCall === 'function') {
+          try {
+            onToolCall({ name: fc.name, args: callArgs, round: roundIdx });
+          } catch (_) {}
+        }
+        const res = await executeTool(fc.name, callArgs);
+        toolRecords.push({
+          roundIndex: roundIdx,
+          name: fc.name,
+          summary: (res && res.summary) || fc.name,
+          rawContent: String((res && res.content) || '')
+        });
+      }
+
+      roundRecords.push({ modelTurn, toolRecords });
+      continue;
+    }
+
+    return settleAnswer(answer.finish(stop, { cutShort: !!(signal && signal.aborted) }), onToken, lengthCut);
+  }
+
+  throw new Error(EMPTY_ANSWER_MESSAGE);
+}
+
+async function streamWithTools(provider, args, minimaxRegion) {
+  if (provider === 'anthropic') return streamAnthropicToolLoop(args);
+  if (provider === 'gemini') return streamGeminiToolLoop(args);
+  if (provider === 'ollama') {
+    const err = new Error('Ollama tool loop unsupported; falling back to local chunk injection');
+    err.status = 400;
+    throw err;
+  }
+  if (
+    ['openai', CUSTOM_PROVIDER, 'groq', 'cerebras', 'minimax', 'deepseek', 'azure'].includes(provider)
+  ) {
+    return streamOpenAiToolLoop(provider, args, minimaxRegion);
+  }
+  throw new Error('unknown provider: ' + provider);
+}
+
 function createLLM(settings) {
   const provider = settings.provider;
   const keys = settings.apiKeys || {};
@@ -796,10 +1327,63 @@ function createLLM(settings) {
         const wrapped = formatProviderErrorMessage(error, provider, failedModel);
         return wrapped instanceof Error ? wrapped : new Error(wrapped);
       };
+
+      const hasTools = Array.isArray(params && params.tools) && params.tools.length > 0 && typeof params.executeTool === 'function';
+      if (!hasTools) {
+        try {
+          return await streamWith(provider, args, minimaxRegion);
+        } catch (error) {
+          throw wrap(error, useModel);
+        }
+      }
+
+      const deepTimeoutMs =
+        Number.isFinite(params.deepTimeoutMs) && params.deepTimeoutMs > 0 ? params.deepTimeoutMs : 35000;
+      const wallController = new AbortController();
+      const wallTimer = setTimeout(() => {
+        wallController.abort(new Error('Deep repository lookup timed out. Please try again.'));
+      }, deepTimeoutMs);
+      if (typeof wallTimer.unref === 'function') wallTimer.unref();
+
+      const combinedSignal = params.signal
+        ? AbortSignal.any([params.signal, wallController.signal])
+        : wallController.signal;
+
+      let emittedTokens = false;
+      const userOnToken = args.onToken || (() => {});
+      const trackedArgs = {
+        ...args,
+        signal: combinedSignal,
+        onToken: (tok) => {
+          emittedTokens = true;
+          userOnToken(tok);
+        }
+      };
+
       try {
-        return await streamWith(provider, args, minimaxRegion);
+        return await streamWithTools(provider, trackedArgs, minimaxRegion);
       } catch (error) {
+        if (!emittedTokens && !combinedSignal.aborted && shouldFallbackFromTools(error)) {
+          try {
+            return await streamWith(
+              provider,
+              {
+                ...trackedArgs,
+                system: params.fallbackSystem || args.system,
+                turns: sanitizeTurns(params.fallbackTurns || params.turns),
+                tools: undefined,
+                executeTool: undefined,
+                onToolCall: undefined
+              },
+              minimaxRegion
+            );
+          } catch (fallbackErr) {
+            throw wrap(fallbackErr, useModel);
+          }
+        }
         throw wrap(error, useModel);
+      } finally {
+        clearTimeout(wallTimer);
       }
     }
   };

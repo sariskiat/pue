@@ -16,6 +16,11 @@ const { createStreamingSTT } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 const { createProfileStore } = require('./src/profile-store');
+const { createWorkspaceStore } = require('./src/workspace-store');
+const { buildPrepBriefPrompt, parsePrepBrief } = require('./src/prep-brief');
+const { formatDissectionMarkdown } = require('./src/round-dissector');
+const { triageContext } = require('./src/context-triage');
+const { TOOL_DEFINITIONS, createScopedToolbox } = require('./src/repo-tools');
 
 let profileStore = null;
 function getProfileStore() {
@@ -24,6 +29,16 @@ function getProfileStore() {
   }
   return profileStore;
 }
+
+let workspaceStore = null;
+function getWorkspaceStore() {
+  if (!workspaceStore) {
+    workspaceStore = createWorkspaceStore(() => app.getPath('userData'), { debounceMs: 1500 });
+  }
+  return workspaceStore;
+}
+
+let activeFeatureAbort = null;
 
 function recordEvent(ev) {
   if (ev && (ev.level === 'error' || ev.level === 'fatal')) {
@@ -179,6 +194,19 @@ function pushTranscript(turn) {
   transcript.push(turn);
   if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
   if (meetingMemory) meetingMemory.onTurn(turn);
+  try {
+    const ws = getWorkspaceStore().getActiveWorkspace();
+    if (ws && ws.activeRoundId) {
+      getWorkspaceStore().appendRoundEvent(ws.id, ws.activeRoundId, {
+        type: 'transcript_turn',
+        channel: turn.channel,
+        text: turn.text,
+        ts: turn.ts
+      });
+    }
+  } catch (_) {
+    // Never interrupt live capture if workspace write fails.
+  }
 }
 
 function send(channel, data) { if (win && !win.isDestroyed()) win.webContents.send(channel, data); }
@@ -872,25 +900,109 @@ async function runFeature(mode, userText) {
     }
 
     const settingsForPrompt = store.getSettings();
-    let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
-    // Summaries of the last few meetings, so "what did we agree last time?"
-    // has something to draw on. Never the current meeting, never leetcode.
-    const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
-    if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
-    const system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
-    const built = def.build({ transcript, userText: userText || '' });
+    const activeWs = getWorkspaceStore().getActiveWorkspace();
+    const activeRoundId = activeWs ? activeWs.activeRoundId : null;
+    const roundProj =
+      activeWs && activeRoundId
+        ? getWorkspaceStore().buildRoundProjection(activeWs.id, activeRoundId)
+        : { transcript, rollingSummary: '', qaTurns: [] };
+    const wsMemory =
+      mode !== 'leetcode' && activeWs && activeRoundId
+        ? getWorkspaceStore().workspaceMemoryBlock(activeWs.id, activeRoundId)
+        : '';
+    const fullProfile = getProfileStore().getProfile();
+
+    const hasWorkspaceOrProfileData =
+      (activeWs && ((activeWs.files && activeWs.files.length > 0) || (activeWs.notes && activeWs.notes.trim()) || (activeWs.prepBrief && activeWs.prepBrief.summary))) ||
+      (fullProfile.documents && fullProfile.documents.length > 0) ||
+      (fullProfile.repos && fullProfile.repos.length > 0) ||
+      Boolean(wsMemory);
+
+    let system;
+    let turnsForStream;
+    let fallbackSystem = null;
+    let fallbackTurns = null;
+    let triaged = null;
+
+    if (hasWorkspaceOrProfileData || (roundProj.qaTurns && roundProj.qaTurns.length > 0) || mode === 'recap') {
+      triaged = triageContext({
+        mode,
+        transcript: roundProj.transcript && roundProj.transcript.length ? roundProj.transcript : transcript,
+        rollingSummary: roundProj.rollingSummary || '',
+        userText: userText || '',
+        workspace: activeWs,
+        workspaceMemory: wsMemory,
+        profile: fullProfile,
+        qaTurns: roundProj.qaTurns || [],
+        slides: slideStore.list(),
+        aiRules: settingsForPrompt.aiRules || ''
+      });
+      system = triaged.systemPrompt;
+      turnsForStream = triaged.conversationTurns;
+
+      if (activeWs && activeRoundId) {
+        try {
+          getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+            type: 'perception_trace',
+            ...triaged.perceptionTrace
+          });
+          if (triaged.compactionCandidate) {
+            getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+              type: 'compaction',
+              ...triaged.compactionCandidate
+            });
+          }
+        } catch (_) {}
+      }
+    } else {
+      let contextBlock = buildInterviewContext(settingsForPrompt, mode, transcript);
+      const memoryBlock = mode !== 'leetcode' && meetingMemory ? meetingMemory.memoryBlock() : null;
+      if (memoryBlock) contextBlock = contextBlock ? contextBlock + '\n\n' + memoryBlock : memoryBlock;
+      system = def.buildSystem ? def.buildSystem(contextBlock, settingsForPrompt.aiRules || '') : (def.system || '');
+      const built = def.build({ transcript, userText: userText || '' });
+      turnsForStream = [{ role: 'user', text: built }];
+    }
+
+    const allowedRootEntries = [
+      ...getProfileStore().listAllowedRootEntries(),
+      ...(activeWs ? getWorkspaceStore().allowedRootEntriesForWorkspace(activeWs.id) : [])
+    ];
+    const toolbox = createScopedToolbox(allowedRootEntries);
+    const isDeepMode = mode !== 'leetcode' && (mode === 'ask' || !!settingsForPrompt.smart) && toolbox.hasRoots;
+
+    if (isDeepMode) {
+      const expanded = triageContext({
+        mode,
+        transcript: roundProj.transcript && roundProj.transcript.length ? roundProj.transcript : transcript,
+        rollingSummary: roundProj.rollingSummary || '',
+        userText: userText || '',
+        workspace: activeWs,
+        workspaceMemory: wsMemory,
+        profile: fullProfile,
+        qaTurns: roundProj.qaTurns || [],
+        slides: slideStore.list(),
+        aiRules: settingsForPrompt.aiRules || '',
+        topK: 10,
+        p1BudgetChars: 6500
+      });
+      fallbackSystem = expanded.systemPrompt;
+      fallbackTurns = expanded.conversationTurns;
+    }
 
     // Watchdog: a provider that stalls mid-stream would otherwise hang the await forever,
     // leaving state.busy = true and wedging every later question until an app restart.
     // When it gives up, the HTTP request is cancelled too (guard.signal), so the
     // provider stops generating and billing an answer cue no longer shows.
     const guard = giveUpTimer(STREAM_INACTIVITY_MS, 'the model stopped responding (timed out). Please try again.');
+    const cancelController = new AbortController();
+    activeFeatureAbort = cancelController;
+    const requestSignal = AbortSignal.any([guard.signal, cancelController.signal]);
     const rearm = guard.rearm;
-    // A reasoning model streams its thinking before any text: that is
-    // activity too, so a long think is not called a stalled stream. While it
-    // only thinks, the renderer shows "Thinking…" (never the reasoning text).
-    // The signal repeats at most every 5 s, which keeps the renderer's busy
-    // failsafe from firing during a long think.
+    const citedSources = new Set(
+      triaged && Array.isArray(triaged.matchedChunks)
+        ? triaged.matchedChunks.map((c) => `${c.sourceLabel || 'source'}:${c.startLine || 1}`)
+        : []
+    );
     let answerStarted = false;
     let thinkingSentAt = 0;
     const noteActivity = (kind) => {
@@ -901,22 +1013,56 @@ async function runFeature(mode, userText) {
         send('llm:thinking', {});
       }
     };
+    let finalAnswerText = '';
     try {
-      await Promise.race([
+      finalAnswerText = await Promise.race([
         llm.stream({
           system,
-          turns: [{ role: 'user', text: built }],
+          turns: turnsForStream,
           imageDataUrl,
           onToken: (t) => { if (streamSettled) return; answerStarted = true; rearm(); send('llm:token', { text: t }); },
           onActivity: noteActivity,
           signal: guard.signal,
+          ...(isDeepMode
+            ? {
+                signal: requestSignal,
+                tools: TOOL_DEFINITIONS,
+                maxToolRounds: 4,
+                deepTimeoutMs: 35000,
+                fallbackSystem,
+                fallbackTurns,
+                onToolCall: (info) => {
+                  rearm();
+                  const detail = (info.args && (info.args.relPath || info.args.query || info.args.rootName)) || info.name;
+                  send('llm:tool', { name: info.name, detail: String(detail), round: info.round });
+                },
+                executeTool: async (name, toolArgs) => {
+                  const res = await toolbox.executeTool(name, toolArgs);
+                  if (res && res.sourceHandle) citedSources.add(res.sourceHandle);
+                  return res;
+                }
+              }
+            : { signal: requestSignal }),
           onRetry: (r) => recordEvent({ level: 'info', event: 'llm_filter_retry', msg: `${r.from} -> ${r.to}`, frame: 'runFeature', context: { mode, from: r.from, to: r.to, finishReason: r.finishReason } })
         }),
         guard.expired
       ]);
     } finally {
       streamSettled = true;
+      activeFeatureAbort = null;
       guard.clear();
+    }
+    if (activeWs && activeRoundId && finalAnswerText && mode !== 'leetcode' && mode !== 'recap') {
+      try {
+        getWorkspaceStore().appendRoundEvent(activeWs.id, activeRoundId, {
+          type: 'qa_turn',
+          mode,
+          userText: userText || '',
+          category: (triaged && triaged.category) || category || 'general',
+          answer: finalAnswerText,
+          citedSources: Array.from(citedSources)
+        });
+      } catch (_) {}
     }
     send('llm:done', {});
     clearOwnKeyFailed(settings.provider);
@@ -1037,7 +1183,14 @@ ipcMain.handle('platform:info', () => ({
   winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
 }));
 ipcMain.handle('transcript:clear', () => {
-  if (meetingMemory) meetingMemory.end().catch(() => {}); // it stays in history with its notes
+  if (meetingMemory) meetingMemory.end().catch(() => {});
+  try {
+    const ws = getWorkspaceStore().getActiveWorkspace();
+    if (ws) {
+      getWorkspaceStore().clearRoundTranscript(ws.id, ws.activeRoundId);
+      send('workspace:changed', currentWorkspaceSnapshot());
+    }
+  } catch (_) {}
   transcript.splice(0, transcript.length);
   resetSlidesSession();
   send('slides:update', { count: 0, last: null });
@@ -1056,6 +1209,12 @@ ipcMain.handle('slides:clear', () => {
   return { ok: true };
 });
 ipcMain.on('ask', (_e, payload) => runFeature(payload.mode, payload.text));
+ipcMain.on('llm:cancel', () => {
+  if (activeFeatureAbort) {
+    activeFeatureAbort.abort(new Error('Lookup cancelled.'));
+    activeFeatureAbort = null;
+  }
+});
 ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
@@ -1152,6 +1311,165 @@ ipcMain.handle('profile:deprecate-lesson', (_e, id) => {
   const summary = getProfileStore().getProfileSummary();
   send('profile:changed', summary);
   return summary;
+});
+
+function currentWorkspaceSnapshot() {
+  const list = getWorkspaceStore().listWorkspaces();
+  const active = getWorkspaceStore().getActiveWorkspace();
+  return {
+    activeWorkspaceId: list.activeWorkspaceId,
+    items: list.items,
+    activeWorkspace: active ? getWorkspaceStore().getWorkspaceSummary(active.id) : null
+  };
+}
+
+function syncTranscriptToActiveRound() {
+  transcript.splice(0, transcript.length);
+  const active = getWorkspaceStore().getActiveWorkspace();
+  if (!active || !active.activeRoundId) return;
+  const proj = getWorkspaceStore().buildRoundProjection(active.id, active.activeRoundId);
+  if (proj.transcript.length) {
+    transcript.push(...proj.transcript.slice(-MAX_TRANSCRIPT_TURNS));
+  }
+}
+
+ipcMain.handle('workspace:list', () => currentWorkspaceSnapshot());
+ipcMain.handle('workspace:create', (_e, payload) => {
+  getWorkspaceStore().createWorkspace(payload || {});
+  syncTranscriptToActiveRound();
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return snap;
+});
+ipcMain.handle('workspace:update', (_e, { id, patch } = {}) => {
+  getWorkspaceStore().updateWorkspace(id, patch || {});
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return snap;
+});
+ipcMain.handle('workspace:select', (_e, id) => {
+  getWorkspaceStore().setActiveWorkspace(id);
+  syncTranscriptToActiveRound();
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  send('transcript:restore', { turns: transcript.slice() });
+  return snap;
+});
+ipcMain.handle('workspace:delete', (_e, id) => {
+  getWorkspaceStore().deleteWorkspace(id);
+  syncTranscriptToActiveRound();
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return snap;
+});
+ipcMain.handle('workspace:attach-file', async (_e, { wsId, role = 'jd', pickFolder = false } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  const res = await dialog.showOpenDialog(win, {
+    title: pickFolder ? 'Attach Test / Project Folder' : `Attach ${role.toUpperCase()} File`,
+    properties: pickFolder ? ['openDirectory'] : ['openFile', 'multiSelections'],
+    ...(pickFolder
+      ? {}
+      : { filters: [{ name: 'Documents & Code', extensions: ['pdf', 'docx', 'md', 'txt', 'json', 'yaml', 'yml', 'py', 'js', 'ts'] }] })
+  });
+  if (res.canceled || !res.filePaths.length) return { canceled: true };
+  for (const fp of res.filePaths) {
+    await getWorkspaceStore().attachWorkspaceFile(targetWsId, fp, role);
+  }
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return { canceled: false, snapshot: snap };
+});
+ipcMain.handle('workspace:remove-file', (_e, { wsId, fileId } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  getWorkspaceStore().removeWorkspaceFile(targetWsId, fileId);
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return snap;
+});
+ipcMain.handle('workspace:create-round', (_e, { wsId, name } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  getWorkspaceStore().createRound(targetWsId, name);
+  syncTranscriptToActiveRound();
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return snap;
+});
+ipcMain.handle('workspace:select-round', (_e, { wsId, roundId } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  getWorkspaceStore().setActiveRound(targetWsId, roundId);
+  syncTranscriptToActiveRound();
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  send('transcript:restore', { turns: transcript.slice() });
+  return snap;
+});
+ipcMain.handle('workspace:end-round', async (_e, { wsId, roundId } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  const round = await getWorkspaceStore().endRound(targetWsId, roundId, {
+    llmFactory: () => createLLM(store.getSettings()),
+    profile: getProfileStore().getProfile()
+  });
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  send('round:dissected', { workspaceId: targetWsId, round });
+  return { round, snapshot: snap };
+});
+ipcMain.handle('workspace:generate-brief', async (_e, wsId) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  const ws = getWorkspaceStore().getWorkspace(targetWsId);
+  if (!ws) throw new Error('Workspace not found.');
+  const llm = createLLM(store.getSettings());
+  if (!llm.ready) throw new Error(llm.configurationError || 'Configure an AI provider key in Settings first.');
+  const { system, user, priorRoundFocus } = buildPrepBriefPrompt({
+    workspace: ws,
+    profile: getProfileStore().getProfile()
+  });
+  const raw = await llm.stream({
+    system,
+    turns: [{ role: 'user', text: user }],
+    maxTokens: 1200,
+    onToken: () => {}
+  });
+  const brief = parsePrepBrief(raw, priorRoundFocus);
+  getWorkspaceStore().updateWorkspace(targetWsId, { prepBrief: brief });
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  return { brief, snapshot: snap };
+});
+ipcMain.handle('workspace:get-dissection', (_e, { wsId, roundId } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  const ws = getWorkspaceStore().getWorkspace(targetWsId);
+  if (!ws) return null;
+  const round = ws.rounds.find((r) => r.id === (roundId || ws.activeRoundId));
+  if (!round) return null;
+  return {
+    round,
+    markdown: formatDissectionMarkdown(ws, round)
+  };
+});
+ipcMain.handle('workspace:list-journal', (_e, wsId) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  return getWorkspaceStore().listFailureJournal(targetWsId);
+});
+ipcMain.handle('workspace:decide-lesson', (_e, { wsId, lessonId, decision } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  getWorkspaceStore().decideCandidateLesson(targetWsId, lessonId, decision, {
+    profileStore: getProfileStore()
+  });
+  const snap = currentWorkspaceSnapshot();
+  send('workspace:changed', snap);
+  if (decision === 'promote_global') {
+    send('profile:changed', getProfileStore().getProfileSummary());
+  }
+  return {
+    journal: getWorkspaceStore().listFailureJournal(targetWsId),
+    snapshot: snap,
+    profile: getProfileStore().getProfileSummary()
+  };
+});
+ipcMain.handle('workspace:search-rounds', (_e, { wsId, query } = {}) => {
+  const targetWsId = wsId || getWorkspaceStore().getActiveWorkspace().id;
+  return getWorkspaceStore().searchWorkspaceRounds(targetWsId, query);
 });
 ipcMain.on('app:quit', () => app.quit());
 
@@ -1289,15 +1607,34 @@ function launchApp() {
 
   whisperModelManager = new WhisperModelManager({ userDataPath: app.getPath('userData') });
 
+  const legacySeed = store.consumeLegacyProfileSeed();
+  if (legacySeed) {
+    Promise.all([
+      getProfileStore().seedFromLegacy(legacySeed),
+      getWorkspaceStore().seedFromLegacy(legacySeed)
+    ]).catch((err) => console.error('[pue] legacy migration failed:', err && err.message));
+  }
+
   meetingMemory = createMeetingMemory({
     store: createMeetingStore({ file: path.join(app.getPath('userData'), 'meetings.json'), debounceMs: 1500 }),
     llmFactory: () => createLLM(store.getSettings()),
     log: (msg) => console.log('[meetings]', msg),
     onRetry: (r) => recordEvent({ level: 'info', event: 'llm_filter_retry', msg: `${r.from} -> ${r.to}`, frame: 'meetingNotes', context: { mode: 'notes', from: r.from, to: r.to, finishReason: r.finishReason } })
   });
-  restoredTurns = meetingMemory.resumeOpen();
-  if (restoredTurns.length) transcript.push(...restoredTurns.slice(-MAX_TRANSCRIPT_TURNS));
+  syncTranscriptToActiveRound();
+  if (!transcript.length) {
+    restoredTurns = meetingMemory.resumeOpen();
+    if (restoredTurns.length) transcript.push(...restoredTurns.slice(-MAX_TRANSCRIPT_TURNS));
+  } else {
+    restoredTurns = transcript.slice();
+  }
   meetingMemory.catchUp().then((n) => { if (n) console.log(`[meetings] wrote notes for ${n} earlier meeting(s)`); }).catch(() => {});
+  getWorkspaceStore()
+    .catchUpPendingRounds({
+      llmFactory: () => createLLM(store.getSettings()),
+      profile: getProfileStore().getProfile()
+    })
+    .catch(() => {});
 
   const allowMedia = (permission) => permission === 'media' || permission === 'microphone' || permission === 'audioCapture' || permission === 'display-capture' || permission === 'screen';
   session.defaultSession.setPermissionRequestHandler((_wc, permission, cb) => cb(allowMedia(permission)));
@@ -1371,6 +1708,7 @@ app.whenReady().then(async () => {
 app.on('will-quit', () => {
   globalShortcut.unregisterAll();
   if (meetingMemory) meetingMemory.flush();
+  if (workspaceStore) workspaceStore.flushAll();
   stopSlideLoop();
   if (whisperModelManager?.activeDownload) {
     whisperModelManager.cancelDownload(whisperModelManager.activeDownload.modelId);

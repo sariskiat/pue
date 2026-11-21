@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld('cue', {
   whisperModelImport: (modelId) => ipcRenderer.invoke('whisper:model-import', modelId),
   platformInfo: () => ipcRenderer.invoke('platform:info'),
   ask: (payload) => ipcRenderer.send('ask', payload),
+  llmCancel: () => ipcRenderer.send('llm:cancel'),
   captureToggle: () => ipcRenderer.invoke('capture:toggle').catch((err) => {
     console.error('[pue] captureToggle error', err);
     return false;
@@ -34,6 +35,21 @@ contextBridge.exposeInMainWorld('cue', {
   profileRemoveItem: (id) => ipcRenderer.invoke('profile:remove-item', id),
   profileReindex: () => ipcRenderer.invoke('profile:reindex'),
   profileDeprecateLesson: (id) => ipcRenderer.invoke('profile:deprecate-lesson', id),
+  workspaceList: () => ipcRenderer.invoke('workspace:list'),
+  workspaceCreate: (payload) => ipcRenderer.invoke('workspace:create', payload),
+  workspaceUpdate: (id, patch) => ipcRenderer.invoke('workspace:update', { id, patch }),
+  workspaceSelect: (id) => ipcRenderer.invoke('workspace:select', id),
+  workspaceDelete: (id) => ipcRenderer.invoke('workspace:delete', id),
+  workspaceAttachFile: (wsId, role, pickFolder) => ipcRenderer.invoke('workspace:attach-file', { wsId, role, pickFolder: !!pickFolder }),
+  workspaceRemoveFile: (wsId, fileId) => ipcRenderer.invoke('workspace:remove-file', { wsId, fileId }),
+  workspaceCreateRound: (wsId, name) => ipcRenderer.invoke('workspace:create-round', { wsId, name }),
+  workspaceSelectRound: (wsId, roundId) => ipcRenderer.invoke('workspace:select-round', { wsId, roundId }),
+  workspaceEndRound: (wsId, roundId) => ipcRenderer.invoke('workspace:end-round', { wsId, roundId }),
+  workspaceGenerateBrief: (wsId) => ipcRenderer.invoke('workspace:generate-brief', wsId),
+  workspaceGetDissection: (wsId, roundId) => ipcRenderer.invoke('workspace:get-dissection', { wsId, roundId }),
+  workspaceListJournal: (wsId) => ipcRenderer.invoke('workspace:list-journal', wsId),
+  workspaceDecideLesson: (wsId, lessonId, decision) => ipcRenderer.invoke('workspace:decide-lesson', { wsId, lessonId, decision }),
+  workspaceSearchRounds: (wsId, query) => ipcRenderer.invoke('workspace:search-rounds', { wsId, query }),
   quit: () => ipcRenderer.send('app:quit'),
   permissionsCheck: () => ipcRenderer.invoke('permissions:check'),
   permissionsRequest: () => ipcRenderer.invoke('permissions:request'),
@@ -44,6 +60,7 @@ contextBridge.exposeInMainWorld('cue', {
       'capture:state',
       'llm:start',
       'llm:thinking',
+      'llm:tool',
       'llm:token',
       'llm:done',
       'llm:error',
@@ -58,7 +75,9 @@ contextBridge.exposeInMainWorld('cue', {
       'whisper:download-progress',
       'whisper:models-changed',
       'slides:update',
-      'profile:changed'
+      'profile:changed',
+      'workspace:changed',
+      'round:dissected'
     ];
     if (!allowed.includes(channel)) return;
     ipcRenderer.on(channel, (_e, data) => cb(data));

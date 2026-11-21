@@ -311,14 +311,14 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Extend `src/llm.js` with bounded tool-loop execution (`maxToolRounds = 4`, `35,000ms` overall wall timeout, Level-1 clearing for consumed `tool_result`s `> 1,500` chars) across OpenAI/Compatible, Anthropic, and Gemini streams. Intercept tool calls before `settleAnswer()`, reject `finishReason === 'length'` truncated tool calls, attach `imageDataUrl` only on round `0`, and fall back once to `topK = 10` chunks only on round-0 HTTP `400`/`404`/`422` tool-schema rejections. Wire `workspace:*`, `llmCancel`, `triageContext`, `createScopedToolbox`, Prep Brief, and Round Dissection into `main.js` and `preload.js`.
 
 **Acceptance criteria:**
-- [ ] Simulated multi-round tool calls (`grep_files -> read_file -> streamed answer`) succeed across OpenAI, Anthropic, and Gemini stream adapters without triggering `EMPTY_ANSWER_MESSAGE`, and reject `finishReason === 'length'` tool calls safely.
-- [ ] Round-0 HTTP `400` tool-schema error falls back once to `topK = 10` local chunks, whereas `401` and `429` fail immediately without fallback; `say` (`smart = false`) passes zero tools.
-- [ ] `main.js` and `preload.js` wire all `workspace:*`, `llm:tool`, `round:dissected`, and `llmCancel` channels and persist `qa_turn` + `perception_trace` to the active round JSONL ledger.
+- [x] Simulated multi-round tool calls (`grep_files -> read_file -> streamed answer`) succeed across OpenAI, Anthropic, and Gemini stream adapters without triggering `EMPTY_ANSWER_MESSAGE`, and reject `finishReason === 'length'` tool calls safely.
+- [x] Round-0 HTTP `400` tool-schema error falls back once to `topK = 10` local chunks, whereas `401` and `429` fail immediately without fallback; `say` (`smart = false`) passes zero tools.
+- [x] `main.js` and `preload.js` wire all `workspace:*`, `llm:tool`, `round:dissected`, and `llmCancel` channels and persist `qa_turn` + `perception_trace` to the active round JSONL ledger.
 
 **Verification:**
-- [ ] Tests pass: `node --test test/llm-tool-loop.test.js test/llm.test.js && npm test`
-- [ ] Build succeeds: `node --check src/llm.js && node --check main.js && node verify.js`
-- [ ] Manual check: Verify Deep-Path wall timer aborts a stalled mock tool loop cleanly and resets `state.busy = false`.
+- [x] Tests pass: `node --test test/llm-tool-loop.test.js test/llm.test.js && npm test`
+- [x] Build succeeds: `node --check src/llm.js && node --check main.js && node verify.js`
+- [x] Manual check: Verify Deep-Path wall timer aborts a stalled mock tool loop cleanly and resets `state.busy = false`.
 
 **Dependencies:** Task 8, Task 9, Task 10, Task 11
 
@@ -333,9 +333,9 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 ---
 
 ## Checkpoint 4: After Tasks 10-12 (`two-speed-context` complete)
-- [ ] All unit and integration tests pass (`npm test`)
-- [ ] Fast Path runs zero tool loops (`< 20ms` local triage)
-- [ ] Deep Path executes jailed read-only tools across providers with timeout, truncation, and fallback guards
+- [x] All unit and integration tests pass (`npm test`)
+- [x] Fast Path runs zero tool loops (`< 20ms` local triage)
+- [x] Deep Path executes jailed read-only tools across providers with timeout, truncation, and fallback guards
 
 ---
 
