@@ -365,6 +365,7 @@ function createWindow() {
     height: H,
     x: startX - SIDE_W,
     y: startY,
+    show: false,
     enableLargerThanScreen: true,
     // The window is shown inactive and never takes focus, so without this macOS spends the
     // first click only activating it and a press on the drag handle does nothing.
@@ -417,7 +418,7 @@ function createWindow() {
   }
 
   win.setAlwaysOnTop(true, 'screen-saver', 1);
-  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true, skipTransformProcessType: true });
   if (isMac && typeof win.setHiddenInMissionControl === 'function') win.setHiddenInMissionControl(true);
 
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -428,11 +429,11 @@ function createWindow() {
     moveSaveTimer = setTimeout(saveWindowPosition, 500);
   });
 
-  win.setTitle('Microsoft Edge Update'); // set before load
+  win.setTitle('pue');
 
   win.webContents.on('did-finish-load', () => {
     win.showInactive();
-    win.setTitle('Microsoft Edge Update');
+    win.setTitle('pue');
     if (restoredTurns.length) {
       // A meeting was in progress when pue last exited: put its transcript back
       // in the sidebar so Recap / Follow-up pick up where the conversation was.
@@ -1226,6 +1227,65 @@ ipcMain.handle('platform:info', () => ({
   winBuild: WIN_BUILD,
   winSupportsContentProtection: WIN_SUPPORTS_CONTENT_PROTECTION
 }));
+
+ipcMain.handle('display:verify-protection', async () => {
+  if (!win || win.isDestroyed()) {
+    return { ok: false, error: 'Main window is not open.' };
+  }
+  const countMagenta = (img) => {
+    if (!img || img.isEmpty()) return 0;
+    const bmp = img.toBitmap();
+    let hits = 0;
+    for (let i = 0; i + 3 < bmp.length; i += 4) {
+      const b = bmp[i];
+      const g = bmp[i + 1];
+      const r = bmp[i + 2];
+      if (r >= 235 && g <= 25 && b >= 235) hits++;
+    }
+    return hits;
+  };
+
+  try {
+    await win.webContents.executeJavaScript(`(() => {
+      const m = document.createElement('div');
+      m.id = 'pue-protection-probe';
+      m.style.cssText = 'position:fixed;left:50%;top:50%;width:180px;height:120px;transform:translate(-50%,-50%);background:#ff00ff;z-index:999999;pointer-events:none;border-radius:8px;';
+      document.body.appendChild(m);
+    })()`);
+    await new Promise((r) => setTimeout(r, 140));
+
+    const sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 1440, height: 900 }
+    });
+    const screenSources = sources.filter((s) => s.id.startsWith('screen:'));
+    const windowSources = sources.filter((s) => s.id.startsWith('window:'));
+    const screenLeakedPixels = screenSources.reduce((sum, s) => sum + countMagenta(s.thumbnail), 0);
+    const windowPickerEntries = windowSources.filter(
+      (s) => (s.name || '').trim().toLowerCase() === 'pue' || countMagenta(s.thumbnail) > 25
+    ).length;
+
+    return {
+      ok: true,
+      screenSourcesChecked: screenSources.length,
+      screenLeakedPixels,
+      windowPickerEntries,
+      protectedFromScreenCapture: screenSources.length > 0 && screenLeakedPixels === 0 && windowPickerEntries === 0
+    };
+  } catch (err) {
+    return {
+      ok: false,
+      error: err && err.message ? err.message : String(err)
+    };
+  } finally {
+    try {
+      await win.webContents.executeJavaScript(`(() => {
+        const m = document.getElementById('pue-protection-probe');
+        if (m) m.remove();
+      })()`);
+    } catch (_) {}
+  }
+});
 ipcMain.handle('transcript:clear', () => {
   if (meetingMemory) meetingMemory.end().catch(() => {});
   try {

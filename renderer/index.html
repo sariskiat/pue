@@ -350,6 +350,14 @@
           <input type="range" id="s-opacity-slider" min="20" max="100" step="1" value="100" />
           <span id="s-opacity-value">100%</span>
         </div>
+
+        <label class="s-label">Screen-Share Protection Check <span class="s-hint">measures live OS ScreenCaptureKit / WebRTC capture</span></label>
+        <div class="whisper-card">
+          <div class="whisper-actions">
+            <button id="verify-protection-btn" class="s-action" type="button">Run Live Screen-Capture Test</button>
+          </div>
+          <div id="verify-protection-result" class="s-note">Flashes a 140ms magenta marker on this overlay, captures your display through the same OS pipeline used by Google Meet and Teams, and counts leaked pixels.</div>
+        </div>
       </div>
     </div>
   </div>

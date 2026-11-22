@@ -11,6 +11,7 @@ contextBridge.exposeInMainWorld('pue', {
   whisperModelDelete: (modelId) => ipcRenderer.invoke('whisper:model-delete', modelId),
   whisperModelImport: (modelId) => ipcRenderer.invoke('whisper:model-import', modelId),
   platformInfo: () => ipcRenderer.invoke('platform:info'),
+  verifyProtection: () => ipcRenderer.invoke('display:verify-protection'),
   ask: (payload) => ipcRenderer.send('ask', payload),
   llmCancel: () => ipcRenderer.send('llm:cancel'),
   captureToggle: () => ipcRenderer.invoke('capture:toggle').catch((err) => {

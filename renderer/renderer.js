@@ -2764,6 +2764,30 @@
     applyWorkspaceSnapshot(snap);
   });
 
+  const verifyProtectionBtn = $('#verify-protection-btn');
+  const verifyProtectionResult = $('#verify-protection-result');
+  if (verifyProtectionBtn && verifyProtectionResult) {
+    verifyProtectionBtn.addEventListener('click', async () => {
+      verifyProtectionBtn.disabled = true;
+      verifyProtectionResult.textContent = 'Testing live display capture...';
+      try {
+        const res = await pue.verifyProtection();
+        if (!res || !res.ok) {
+          verifyProtectionResult.textContent =
+            'Could not capture display (' + ((res && res.error) || 'grant Screen Recording permission to pue in System Settings') + ').';
+        } else if (res.protectedFromScreenCapture) {
+          verifyProtectionResult.textContent =
+            `Verified (${res.screenSourcesChecked} display checked): 0 leaked overlay pixels in OS screen capture, 0 window-picker entries.`;
+        } else {
+          verifyProtectionResult.textContent =
+            `Warning: ${res.screenLeakedPixels} marker pixels or ${res.windowPickerEntries} window-picker entries appeared in OS capture.`;
+        }
+      } finally {
+        verifyProtectionBtn.disabled = false;
+      }
+    });
+  }
+
   // ---- boot --------------------------------------------------------------
   (async function boot() {
     settings = await pue.settingsGet();
