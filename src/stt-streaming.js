@@ -14,10 +14,16 @@ const { GEMINI_TRANSCRIBE_LIVE_MODEL } = require('./llm');
 // Uses the dedicated transcription session type for lowest latency streaming STT
 // ============================================================================
 
+const MIN_COMMIT_BYTES_24K = Math.floor(24000 * 2 * 0.12); // >=120ms PCM16 @ 24kHz before commit
+const MAX_UNCOMMITTED_BYTES_24K = 24000 * 2 * 12; // auto-commit continuous speech every 12s
+
 class OpenAIRealtimeSTT {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
-    this.model = options.model || 'gpt-realtime-whisper';
+    this.model = options.model || 'gpt-live-transcribe';
+    this._delay = options.delay || 'low';
+    this._languages = Array.isArray(options.languages) ? options.languages : null;
+    this._WebSocketImpl = options.WebSocketImpl || null;
     this.ws = null;
     this.connected = false;
     this.reconnecting = false;
@@ -30,6 +36,8 @@ class OpenAIRealtimeSTT {
     this._reconnectDelay = 1000;
     this._reconnectTimer = null;
     this._pendingAudio = [];
+    this._uncommittedBytes = 0;
+    this._interimByItem = new Map();
     this._sessionReady = false;
     this._closedByUs = false; // disconnect() was called: ignore the socket's dying breaths, never reconnect
   }
@@ -39,7 +47,7 @@ class OpenAIRealtimeSTT {
     this._closedByUs = false;
 
     try {
-      const WebSocket = require('ws');
+      const WebSocket = this._WebSocketImpl || require('ws');
       // GA transcription endpoint: use ?intent=transcription (NOT ?model=)
       // The transcription model goes inside the session config
       const url = 'wss://api.openai.com/v1/realtime?intent=transcription';
@@ -55,9 +63,19 @@ class OpenAIRealtimeSTT {
         if (this.ws !== ws) return; // superseded by a later connect()/disconnect()
         this.connected = true;
         this._reconnectAttempts = 0;
+        this._uncommittedBytes = 0;
+        this._interimByItem.clear();
         this.onStatusChange('connected');
 
-        // Configure the transcription session (GA format)
+        const transcription = {
+          model: this.model,
+          delay: this._delay
+        };
+        if (this._languages && this._languages.length > 0) {
+          transcription.languages = this._languages;
+        }
+
+        // Configure the GA Realtime transcription session (gpt-live-transcribe uses turn_detection: null + explicit commit)
         this._sendEvent({
           type: 'session.update',
           session: {
@@ -65,10 +83,8 @@ class OpenAIRealtimeSTT {
             audio: {
               input: {
                 format: { type: 'audio/pcm', rate: 24000 },
-                transcription: {
-                  model: this.model,
-                  language: 'en'
-                }
+                transcription,
+                turn_detection: null
               }
             }
           }
@@ -118,15 +134,32 @@ class OpenAIRealtimeSTT {
 
       case 'conversation.item.input_audio_transcription.delta':
         if (event.delta) {
-          this.onInterim(event.delta);
+          const itemKey = event.item_id || 'default';
+          const nextText = (this._interimByItem.get(itemKey) || '') + event.delta;
+          this._interimByItem.set(itemKey, nextText);
+          this.onInterim(nextText.trim());
         }
         break;
 
-      case 'conversation.item.input_audio_transcription.completed':
+      case 'conversation.item.input_audio_transcription.completed': {
+        const itemKey = event.item_id || 'default';
+        this._interimByItem.delete(itemKey);
         if (event.transcript && event.transcript.trim()) {
           this.onTranscript(event.transcript.trim());
         }
         break;
+      }
+
+      case 'conversation.item.input_audio_transcription.failed': {
+        const itemKey = event.item_id || 'default';
+        this._interimByItem.delete(itemKey);
+        this.onError({
+          provider: 'openai-realtime',
+          message: event.error?.message || 'Realtime transcription item failed',
+          status: event.error?.code || null
+        });
+        break;
+      }
 
       case 'input_audio_buffer.speech_started':
         break;
@@ -157,11 +190,24 @@ class OpenAIRealtimeSTT {
 
     // Resample 16kHz -> 24kHz (linear interpolation) since the API requires 24kHz
     const resampled = this._resample16to24(Buffer.from(pcmBuffer));
+    if (!resampled.length) return;
     const b64 = resampled.toString('base64');
+    this._uncommittedBytes += resampled.length;
     this._sendEvent({
       type: 'input_audio_buffer.append',
       audio: b64
     });
+    if (this._uncommittedBytes >= MAX_UNCOMMITTED_BYTES_24K) {
+      this.commit();
+    }
+  }
+
+  commit() {
+    if (!this.connected || !this._sessionReady) return false;
+    if (this._uncommittedBytes < MIN_COMMIT_BYTES_24K) return false;
+    this._uncommittedBytes = 0;
+    this._sendEvent({ type: 'input_audio_buffer.commit' });
+    return true;
   }
 
   _resample16to24(pcm16kHz) {
@@ -185,7 +231,9 @@ class OpenAIRealtimeSTT {
     while (this._pendingAudio.length > 0) {
       const chunk = this._pendingAudio.shift();
       const resampled = this._resample16to24(Buffer.from(chunk));
+      if (!resampled.length) continue;
       const b64 = resampled.toString('base64');
+      this._uncommittedBytes += resampled.length;
       this._sendEvent({
         type: 'input_audio_buffer.append',
         audio: b64
@@ -220,6 +268,8 @@ class OpenAIRealtimeSTT {
     this.reconnecting = false;
     this._sessionReady = false;
     this._pendingAudio = [];
+    this._uncommittedBytes = 0;
+    this._interimByItem.clear();
     if (this.ws) {
       const ws = this.ws;
       this.ws = null; // detach first so the resulting close/error events are ignored
@@ -629,10 +679,10 @@ function createStreamingSTT(settings, channel, callbacks) {
     return { type: 'streaming', provider: 'deepgram', instance: stt };
   }
 
-  // Priority 2: OpenAI Realtime API (excellent quality, slightly higher latency)
+  // Priority 2: OpenAI Realtime API (gpt-live-transcribe low-latency streaming)
   if ((selectedProvider === 'auto' || selectedProvider === 'openai') && keys.openai) {
     const stt = new OpenAIRealtimeSTT(keys.openai, {
-      model: 'gpt-realtime-whisper', // only this model gives true streaming deltas
+      model: 'gpt-live-transcribe',
       onTranscript: (text) => onTranscript(channel, text),
       onInterim: (text) => onInterim(channel, text),
       onError,

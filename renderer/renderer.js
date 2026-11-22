@@ -1488,6 +1488,26 @@
     }
   }
 
+  function updateSttProviderFields() {
+    const selectedStt = settings.sttProvider || 'auto';
+    const openaiCard = $('#stt-openai-card');
+    const sttKeyInput = $('#stt-key-openai');
+    const openaiBadge = $('#stt-openai-badge');
+    const whisperCard = $('#whisper-local-card');
+    if (openaiCard) {
+      openaiCard.classList.toggle('hidden', selectedStt !== 'openai' && selectedStt !== 'auto');
+    }
+    if (whisperCard) {
+      whisperCard.classList.toggle('hidden', selectedStt !== 'local');
+    }
+    if (openaiBadge) {
+      const hasKey = Boolean((sttKeyInput && sttKeyInput.value.trim()) || (settings.apiKeys && settings.apiKeys.openai));
+      openaiBadge.classList.toggle('ready', hasKey);
+      openaiBadge.classList.toggle('error', !hasKey && selectedStt === 'openai');
+      openaiBadge.textContent = hasKey ? 'Key ready' : (selectedStt === 'openai' ? 'Key required' : 'Optional in Auto');
+    }
+  }
+
   // Keys as they were when Settings opened: saveSettings only follows a key
   // the person typed in this visit (see there).
   let keysAtOpen = {};
@@ -1497,6 +1517,8 @@
     document.querySelectorAll('#provider-seg button').forEach((b) => b.classList.toggle('on', b.dataset.provider === settings.provider));
     $('#key-cerebras').value = settings.apiKeys.cerebras || '';
     $('#key-openai').value = settings.apiKeys.openai || '';
+    const sttKeyOpenai = $('#stt-key-openai');
+    if (sttKeyOpenai) sttKeyOpenai.value = settings.apiKeys.openai || '';
     $('#key-anthropic').value = settings.apiKeys.anthropic || '';
     $('#key-groq').value = settings.apiKeys.groq || '';
     $('#key-custom').value = settings.apiKeys.custom || '';
@@ -1526,6 +1548,7 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((button) => {
       button.classList.toggle('on', button.dataset.sttProvider === (settings.sttProvider || 'auto'));
     });
+    updateSttProviderFields();
     const localWhisper = settings.localWhisper || { modelId: 'base.en', language: 'auto', threads: 0 };
     $('#whisper-language').value = localWhisper.language || 'auto';
     $('#whisper-threads').value = Number(localWhisper.threads) || 0;
@@ -1575,8 +1598,22 @@
     document.querySelectorAll('#stt-provider-seg button').forEach((candidate) => {
       candidate.classList.toggle('on', candidate === button);
     });
+    updateSttProviderFields();
     $('#s-status').textContent = statusText();
   }));
+
+  const mainKeyOpenaiEl = $('#key-openai');
+  const sttKeyOpenaiEl = $('#stt-key-openai');
+  if (mainKeyOpenaiEl && sttKeyOpenaiEl) {
+    mainKeyOpenaiEl.addEventListener('input', () => {
+      sttKeyOpenaiEl.value = mainKeyOpenaiEl.value;
+      updateSttProviderFields();
+    });
+    sttKeyOpenaiEl.addEventListener('input', () => {
+      mainKeyOpenaiEl.value = sttKeyOpenaiEl.value;
+      updateSttProviderFields();
+    });
+  }
 
   function formatBytes(bytes) {
     if (!Number.isFinite(bytes) || bytes <= 0) return '0 MB';
@@ -1745,7 +1782,9 @@
     if (!settings.apiKeys[settings.provider]) {
       const keyedProviders = ['cerebras', 'openai', 'anthropic', 'gemini', 'groq', 'minimax', 'deepseek', 'azure'];
       const justFilled = keyedProviders.find((p) => settings.apiKeys[p] && settings.apiKeys[p] !== (keysAtOpen[p] || ''));
-      if (justFilled) settings.provider = justFilled;
+      if (justFilled && !(justFilled === 'openai' && settings.sttProvider === 'openai' && settings.provider !== 'openai')) {
+        settings.provider = justFilled;
+      }
     }
     // Transcription
     if (!settings.localWhisper) settings.localWhisper = {};

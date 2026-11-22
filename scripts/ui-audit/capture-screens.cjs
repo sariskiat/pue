@@ -241,10 +241,13 @@ app.on('browser-window-created', (_event, win) => {
       await sleep(200);
       await capture(win, '07-settings-workspaces', report);
 
-      // 8. Settings -> Audio
+      // 8. Settings -> Audio (OpenAI selected + Local selected)
       await win.webContents.executeJavaScript(`document.querySelector('.s-tab[data-tab="transcription"]').click()`);
       await sleep(200);
-      await capture(win, '08-settings-audio', report);
+      await win.webContents.executeJavaScript(`document.querySelector('#stt-provider-seg button[data-stt-provider="openai"]').click()`);
+      await capture(win, '08-settings-audio-openai', report);
+      await win.webContents.executeJavaScript(`document.querySelector('#stt-provider-seg button[data-stt-provider="local"]').click()`);
+      await capture(win, '08b-settings-audio-local', report);
 
       // Close settings
       await win.webContents.executeJavaScript(`document.querySelector('#s-close').click()`);

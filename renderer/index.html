@@ -260,7 +260,19 @@
           <button data-stt-provider="openai">OpenAI</button>
           <button data-stt-provider="custom">Custom</button>
         </div>
-        <div class="s-note">Local mode keeps microphone and meeting audio on this computer. It never silently falls back to a cloud transcription provider. Custom sends audio to the Base URL and Custom key set under “Use your own API key instead” on the first tab (requires both).</div>
+        <div class="s-note" id="stt-provider-note">Local mode keeps microphone and meeting audio on this computer. OpenAI streams live speech into your active session without changing your chat provider.</div>
+
+        <div id="stt-openai-card" class="whisper-card hidden">
+          <div class="whisper-runtime-row">
+            <span class="s-label">OpenAI Realtime Transcription</span>
+            <span id="stt-openai-badge" class="whisper-badge">Key required</span>
+          </div>
+          <div class="s-field">
+            <span>OpenAI key</span>
+            <input id="stt-key-openai" type="password" placeholder="sk-... (used for listening; chat stays on your chosen provider)" autocomplete="off" />
+          </div>
+          <div class="s-note">Streams live speech to OpenAI <code>gpt-live-transcribe</code> and feeds every turn directly into your active interview session.</div>
+        </div>
 
         <label class="s-label">Meeting audio <span class="s-hint">transcribe the other side of a call</span></label>
         <div class="s-seg" id="meeting-audio-seg">
@@ -269,7 +281,7 @@
         </div>
         <div class="s-note" id="meeting-audio-note"></div>
 
-        <div class="whisper-card">
+        <div id="whisper-local-card" class="whisper-card">
           <div class="whisper-runtime-row">
             <span class="s-label">whisper.cpp runtime</span>
             <span id="whisper-runtime-status" class="whisper-badge">Checking…</span>
@@ -303,9 +315,8 @@
             <input id="whisper-threads" type="number" min="0" max="64" step="1" value="0" />
           </div>
           <div class="s-note">Use 0 for whisper.cpp's default. English-only models always use English regardless of the language setting.</div>
+          <div class="s-status" id="whisper-status"></div>
         </div>
-
-        <div class="s-status" id="whisper-status"></div>
 
         <label class="s-label">Meeting slides <span class="s-hint">opt-in · auto-captions while listening · memory-only</span></label>
         <div class="s-field"><span>Track slides</span><input id="slides-enabled" type="checkbox" style="width:auto;" /></div>

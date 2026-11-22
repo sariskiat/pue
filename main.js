@@ -168,20 +168,33 @@ let captureTransition = Promise.resolve(false);
 // -------- streaming STT state --------
 let streamingSTT = { you: null, them: null }; // streaming STT instances per channel
 let streamingMode = false; // true when using WebSocket streaming STT
+function commitStreamingChannel(channel) {
+  const inst = streamingSTT[channel];
+  if (streamingMode && inst && typeof inst.commit === 'function') {
+    inst.commit();
+  }
+}
+
 const vad = {
   you: new AdaptiveVAD({
     onsetThreshold: 220,
     offsetThreshold: 130,
     silenceFrames: 18,       // ~540ms silence before end
     onSpeechStart: () => send('vad:state', { channel: 'you', speaking: true }),
-    onSpeechEnd: (dur) => send('vad:state', { channel: 'you', speaking: false, durationMs: dur })
+    onSpeechEnd: (dur) => {
+      commitStreamingChannel('you');
+      send('vad:state', { channel: 'you', speaking: false, durationMs: dur });
+    }
   }),
   them: new AdaptiveVAD({
     onsetThreshold: 200,
     offsetThreshold: 120,
     silenceFrames: 20,       // ~600ms for remote audio (more forgiving)
     onSpeechStart: () => send('vad:state', { channel: 'them', speaking: true }),
-    onSpeechEnd: (dur) => send('vad:state', { channel: 'them', speaking: false, durationMs: dur })
+    onSpeechEnd: (dur) => {
+      commitStreamingChannel('them');
+      send('vad:state', { channel: 'them', speaking: false, durationMs: dur });
+    }
   })
 };
 // Pre-speech ring buffers (300ms) so we never clip the start of a word
@@ -426,7 +439,11 @@ function createWindow() {
 }
 
 // -------- STT flushing (batch mode fallback) --------
-function noTranscriptionMessage() {
+function noTranscriptionMessage(settings) {
+  const selected = (settings && settings.sttProvider) || 'auto';
+  if (selected === 'openai' && !(settings && settings.apiKeys && settings.apiKeys.openai)) {
+    return 'OpenAI listening needs an OpenAI API key. Paste your sk-... key in Settings > Audio and click Start session again.';
+  }
   return 'Transcription is off. Pick Local in Settings > Audio to transcribe on this computer with no key, or add an OpenAI or Groq key. Screen and coding features work without it.';
 }
 
@@ -447,7 +464,7 @@ function transcribePiece(channel, pcm, settings, stt, { context = '', session = 
     state.transcribing[channel] = true;
     try {
       if (!stt.available) {
-        if (!sttDisabled) { sttDisabled = true; send('status', { message: noTranscriptionMessage() }); }
+        if (!sttDisabled) { sttDisabled = true; send('status', { message: noTranscriptionMessage(settings) }); }
         return null;
       }
       const res = await stt.transcribe(pcm, { context });
