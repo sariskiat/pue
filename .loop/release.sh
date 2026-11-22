@@ -1,9 +1,9 @@
 #!/bin/bash
-# cue release recipe for publik-loop. Installed as .loop/release.sh (human-merged; loop PRs may not touch it).
+# pue release recipe for publik-loop. Installed as .loop/release.sh (human-merged; loop PRs may not touch it).
 # Contract (publik-loop loop/effects/release.ts): exit 0 + "TAG=vX.Y.Z" (+ "ASSET=<name>" lines) on success;
 # exit 78 with "NEEDS_SECRET=<what>" when a credential is missing, BEFORE anything is published.
 #
-# What a cue release is (same as v0.2.3/v0.2.4):
+# What a pue release is (same as v0.2.3/v0.2.4):
 #   1. version bump on the default branch
 #   2. macOS: built, Developer-ID signed and notarized ON THIS MAC (CI skips unsigned mac uploads since 828db44)
 #   3. tag push -> .github/workflows/release.yml builds Windows + Linux and creates the GitHub release
@@ -12,7 +12,7 @@
 # (notarytool keychain profile, default "publik"), PUBLIK_DIR (publik checkout, default ~/publik).
 set -euo pipefail
 cd "$(dirname "$0")/.."
-REPO=Blueturboguy07/cue
+REPO=Blueturboguy07/pue
 BRANCH=main
 PROFILE="${NOTARY_PROFILE:-publik}"
 PUBLIK_DIR="${PUBLIK_DIR:-$HOME/publik}"
@@ -36,7 +36,7 @@ ver="${LOOP_VERSION:-}"; ver="${ver#v}"
 [ -n "$ver" ] || ver=$(node -p "const [a,b,c]='$cur'.split('.').map(Number); [a,b,c+1].join('.')")
 [[ "$ver" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "bad version '$ver'" >&2; exit 1; }
 tag="v$ver"
-arm="cue-$ver-mac-arm64.zip"; x64="cue-$ver-mac-x64.zip"
+arm="pue-$ver-mac-arm64.zip"; x64="pue-$ver-mac-x64.zip"
 RESUME=0
 if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null 2>&1; then
   assets=$(gh release view "$tag" -R "$REPO" --json assets -q '.assets[].name' 2>/dev/null || true)
@@ -51,12 +51,12 @@ fi
 if [ "$RESUME" = 0 ] && [ "$ver" != "$cur" ]; then
   npm version "$ver" --no-git-tag-version >/dev/null
   git add package.json package-lock.json
-  git commit -q -m "release: cue v$ver" -m "Loop-Ticket: ${LOOP_TICKET:-manual}"
+  git commit -q -m "release: pue v$ver" -m "Loop-Ticket: ${LOOP_TICKET:-manual}"
   log "bumped $cur -> $ver (local commit, not pushed yet)"
 fi
 
 # ---- 2. the app token for this build (minted like CI's PUBLIK_APP_TOKEN; one token per release) -----
-T=$(cd "$PUBLIK_DIR" && pnpm exec tsx scripts/mint-app-token.mts cue --add --label "loop-${LOOP_TICKET:-manual}-$ver" 2>/dev/null || true)
+T=$(cd "$PUBLIK_DIR" && pnpm exec tsx scripts/mint-app-token.mts pue --add --label "loop-${LOOP_TICKET:-manual}-$ver" 2>/dev/null || true)
 [ ${#T} -gt 30 ] || { echo "NEEDS_SECRET=publik app token mint (SUPABASE_SERVICE_ROLE_KEY in $PUBLIK_DIR/.env.local)"; exit 78; }
 restore_build_json() { git checkout -q -- src/publik-build.json 2>/dev/null || true; }
 trap restore_build_json EXIT
@@ -79,8 +79,8 @@ restore_build_json
 
 # ---- 4. notarize each zip, staple the app, re-zip. Still nothing published. ---------------------------
 for arch in arm64 x64; do
-  zip="dist/cue-$ver-mac-$arch.zip"
-  appdir="dist/mac-$arch/cue.app"; [ -d "$appdir" ] || appdir="dist/mac/cue.app"
+  zip="dist/pue-$ver-mac-$arch.zip"
+  appdir="dist/mac-$arch/pue.app"; [ -d "$appdir" ] || appdir="dist/mac/pue.app"
   [ -d "$appdir" ] || { echo "no .app for $arch under dist/" >&2; exit 1; }
   sig="$(codesign -dvv "$appdir" 2>&1 || true)"
   grep -q "^Authority=Developer ID Application" <<<"$sig" || { echo "$appdir is not Developer ID signed" >&2; exit 1; }
@@ -98,7 +98,7 @@ done
 if [ "$RESUME" = 0 ]; then
   log "pushing $BRANCH and $tag"
   git push -q origin "HEAD:$BRANCH"
-  git tag -a "$tag" -m "cue $tag"
+  git tag -a "$tag" -m "pue $tag"
   git push -q origin "refs/tags/$tag"
 fi
 log "waiting for release.yml on $tag"
@@ -118,6 +118,6 @@ gh release view "$tag" -R "$REPO" >/dev/null 2>&1 || { echo "CI finished but rel
 log "uploading mac zips to $tag"
 gh release upload "$tag" "dist/$arm" "dist/$x64" -R "$REPO" --clobber >&2
 assets=$(gh release view "$tag" -R "$REPO" --json assets -q '.assets[].name')
-for want in "$arm" "$x64" "cue-win-x64.exe"; do grep -qx "$want" <<<"$assets" || { echo "release $tag is missing $want" >&2; exit 1; }; done
+for want in "$arm" "$x64" "pue-win-x64.exe"; do grep -qx "$want" <<<"$assets" || { echo "release $tag is missing $want" >&2; exit 1; }; done
 echo "TAG=$tag"
 sed 's/^/ASSET=/' <<<"$assets"

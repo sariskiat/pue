@@ -16,7 +16,7 @@ app.setPath('userData', profile);
 let clickedQuit = false;
 let receivedQuit = false;
 const timeout = setTimeout(() => {
-  console.error('FAIL: cue did not exit after clicking Quit.');
+  console.error('FAIL: pue did not exit after clicking Quit.');
   app.exit(1);
 }, 15000);
 
@@ -24,9 +24,9 @@ ipcMain.on('app:quit', () => { receivedQuit = true; });
 app.on('quit', (_event, exitCode) => {
   clearTimeout(timeout);
   if (clickedQuit && receivedQuit && exitCode === 0) {
-    console.log('PASS: clicking Quit exits cue with no API keys configured.');
+    console.log('PASS: clicking Quit exits pue with no API keys configured.');
   } else {
-    console.error('FAIL: cue exited without the expected button/IPC path.');
+    console.error('FAIL: pue exited without the expected button/IPC path.');
     process.exitCode = 1;
   }
 });
@@ -46,7 +46,7 @@ app.on('browser-window-created', (_event, win) => {
         }, 50);
       })`);
       const noKeys = await contents.executeJavaScript(
-        'window.cue.settingsGet().then(s => Object.values(s.apiKeys).every(v => !v))'
+        'window.pue.settingsGet().then(s => Object.values(s.apiKeys).every(v => !v))'
       );
       assert.equal(noKeys, true, 'Smoke profile must not contain API keys');
 

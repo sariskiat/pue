@@ -1,5 +1,5 @@
 // Meeting memory — wires the meeting store (meetings.js) and notes (notes.js)
-// into the live transcript so cue remembers what was said:
+// into the live transcript so pue remembers what was said:
 //   • every transcript turn is persisted as it lands (survives a crash/restart)
 //   • an interrupted meeting is resumed on the next launch if it is recent
 //   • when listening stops, notes (summary / decisions / action items) are
@@ -12,7 +12,7 @@
 const { buildNotesPrompt, parseNotes } = require('./notes');
 
 const NOTES_SYSTEM =
-  'You are cue, writing private meeting notes for the user ("You") from a transcript of a conversation with ' +
+  'You are pue, writing private meeting notes for the user ("You") from a transcript of a conversation with ' +
   'another party ("Them"). Be factual and specific: keep names, numbers, dates and commitments exactly as said; ' +
   'never invent details that are not in the transcript. Write in clear English.';
 

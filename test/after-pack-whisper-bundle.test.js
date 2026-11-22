@@ -8,12 +8,12 @@ const Module = require('node:module');
 const Arch = { 0: 'ia32', 1: 'x64', 2: 'armv7l', 3: 'arm64', 4: 'universal',
                ia32: 0, x64: 1, armv7l: 2, arm64: 3, universal: 4 };
 
-// Regression test for cue-windows-whisper-runtime-missing: packaged Windows
+// Regression test for pue-windows-whisper-runtime-missing: packaged Windows
 // (and Linux) installers shipped without resources/whisper-runtime, so local
 // Whisper transcription always reported "The packaged Whisper runtime for
 // win32-x64 is missing." — even though the README promises "Packaged builds
 // include a pinned whisper.cpp runtime." Root cause: scripts/after-pack.js's
-// bundling step was gated entirely behind CUE_BUNDLE_WHISPER=1, which no
+// bundling step was gated entirely behind PUE_BUNDLE_WHISPER=1, which no
 // build script or CI workflow (dist:win, dist:linux, release.yml) ever set.
 //
 // Windows/Linux fetch a checksum-verified upstream release archive over the
@@ -54,11 +54,11 @@ function fakeContext(nodeName, archName) {
 
 test.beforeEach(() => {
   capturedPrepareCalls = [];
-  delete process.env.CUE_BUNDLE_WHISPER;
+  delete process.env.PUE_BUNDLE_WHISPER;
 });
 
 test.after(() => {
-  delete process.env.CUE_BUNDLE_WHISPER;
+  delete process.env.PUE_BUNDLE_WHISPER;
 });
 
 test('bundles the checksum-verified archive runtime by default on win32-x64', async () => {
@@ -78,14 +78,14 @@ test('does not bundle the from-source macOS runtime by default (needs cmake/Xcod
   assert.equal(capturedPrepareCalls.length, 0);
 });
 
-test('CUE_BUNDLE_WHISPER=1 still opts macOS in explicitly', async () => {
-  process.env.CUE_BUNDLE_WHISPER = '1';
+test('PUE_BUNDLE_WHISPER=1 still opts macOS in explicitly', async () => {
+  process.env.PUE_BUNDLE_WHISPER = '1';
   await afterPack(fakeContext('darwin', 'x64'));
   assert.equal(capturedPrepareCalls.length, 1);
 });
 
-test('CUE_BUNDLE_WHISPER=0 still opts win32 out explicitly (fast local pack)', async () => {
-  process.env.CUE_BUNDLE_WHISPER = '0';
+test('PUE_BUNDLE_WHISPER=0 still opts win32 out explicitly (fast local pack)', async () => {
+  process.env.PUE_BUNDLE_WHISPER = '0';
   await afterPack(fakeContext('win32', 'x64'));
   assert.equal(capturedPrepareCalls.length, 0);
 });

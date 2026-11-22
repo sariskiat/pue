@@ -9,8 +9,8 @@ const path = require('node:path');
 //   TypeError: audio must be a WebFrameMain, "loopback" or "loopbackWithMute"
 // main.js used to pass the boolean `true` on Windows, so that throw rejected
 // the handler's promise chain, getDisplayMedia() surfaced it to the renderer
-// as AbortError "Error starting capture", and cue told every Windows user
-// "Meeting audio could not be started. Grant screen/audio access to cue and
+// as AbortError "Error starting capture", and pue told every Windows user
+// "Meeting audio could not be started. Grant screen/audio access to pue and
 // try again." — while the OS reported access as granted. Screen capture
 // worked; call audio never did.
 //

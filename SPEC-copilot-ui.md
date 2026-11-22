@@ -5,7 +5,7 @@ Depends on: `job-workspaces`, `two-speed-context`
 
 ## 1. Objective
 
-Extend `cue`'s glass overlay and Settings modal so you can switch job workspaces and rounds, attach global experience/repos and workspace JD/test files, generate the pre-call **Prep Brief**, inspect post-call **Round Dissections**, and approve or dismiss **Failure Journal** lessons without cluttering the live call view.
+Extend `pue`'s glass overlay and Settings modal so you can switch job workspaces and rounds, attach global experience/repos and workspace JD/test files, generate the pre-call **Prep Brief**, inspect post-call **Round Dissections**, and approve or dismiss **Failure Journal** lessons without cluttering the live call view.
 
 ## 2. Overlay Additions (`renderer/index.html`, `renderer/renderer.js`, `renderer/styles.css`)
 
@@ -34,7 +34,7 @@ Extend `cue`'s glass overlay and Settings modal so you can switch job workspaces
 
 ## 4. Preload Bridge (`preload.js`)
 
-Exposes typed `window.cue` methods:
+Exposes typed `window.pue` methods:
 - **Profile:** `profileGet()`, `profileAddDoc(kind)`, `profileAddRepo()`, `profileRemoveItem(id)`, `profileReindex()`, `profileDeprecateLesson(id)`
 - **Workspaces & Rounds:** `workspaceList()`, `workspaceCreate(payload)`, `workspaceUpdate(id, patch)`, `workspaceSelect(id)`, `workspaceDelete(id)`, `workspaceAttachFile(wsId, role, pickFolder)`, `workspaceRemoveFile(wsId, fileId)`, `workspaceCreateRound(wsId, name)`, `workspaceSelectRound(wsId, roundId)`, `workspaceEndRound(wsId, roundId)`, `workspaceGenerateBrief(wsId)`, `workspaceGetDissection(wsId, roundId)`, `workspaceListJournal(wsId)`, `workspaceDecideLesson(wsId, lessonId, decision)`, `workspaceSearchRounds(wsId, query)`
 - **Cancel:** `llmCancel()`

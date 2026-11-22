@@ -2,14 +2,14 @@
 // reasoning models and the thinking counts inside the output cap. With the
 // 700-token cap, 118 of 2,675 fast-tier answers came back empty (output 700,
 // reasoning 700), and on 0.2.10 one screenshot answer in five was cut off.
-// Reproduced live with cue's exact request (publik-balanced, max_tokens 700,
+// Reproduced live with pue's exact request (publik-balanced, max_tokens 700,
 // a screenshot): finish_reason "length", 700 of 700 tokens reasoning, no text,
-// and cue showed a blank bubble or "timed out" after 25 s.
+// and pue showed a blank bubble or "timed out" after 25 s.
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const Module = require('node:module');
 
-let created = null;     // the request cue sent
+let created = null;     // the request pue sent
 let chunks = [];        // what the stream yields
 const originalModuleLoad = Module._load;
 Module._load = function loadWithOpenAIStub(request, parent, isMain) {

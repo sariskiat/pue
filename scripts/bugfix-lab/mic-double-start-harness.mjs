@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Executes the REAL, unmodified startMic()/stopMic() functions and the REAL
-// cue.on('capture:state', ...) handler straight out of renderer/renderer.js
+// pue.on('capture:state', ...) handler straight out of renderer/renderer.js
 // (extracted verbatim between stable comment anchors, not retyped), in a
 // minimal stub DOM/Electron-preload environment. It then fires one
 // capture:state {active:true} event -- exactly what main.js's setCapturing()
@@ -9,9 +9,9 @@
 // -- and counts how many times navigator.mediaDevices.getUserMedia() actually
 // runs as a result.
 //
-// This is a behavioural oracle, not a source grep: it runs cue's real closure
+// This is a behavioural oracle, not a source grep: it runs pue's real closure
 // code path. Exit 1 (bug PRESENT) when getUserMedia fires more than once for
-// one activation, because that is the exact defect described in cue PR #69
+// one activation, because that is the exact defect described in pue PR #69
 // ("`capture:state` called startMic() twice ... two AudioWorklet pipelines
 // fed the 'you' channel ... the user's own voice didn't [get transcribed]") --
 // which is the mechanism that produces this cluster's reported symptom
@@ -22,13 +22,13 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 
-const cueDir = process.argv[2];
-if (!cueDir) {
-  console.error('usage: mic-double-start-harness.mjs <path-to-cue-repo-checkout>');
+const pueDir = process.argv[2];
+if (!pueDir) {
+  console.error('usage: mic-double-start-harness.mjs <path-to-pue-repo-checkout>');
   process.exit(2);
 }
 
-const rendererPath = `${cueDir}/renderer/renderer.js`;
+const rendererPath = `${pueDir}/renderer/renderer.js`;
 let src;
 try {
   src = readFileSync(rendererPath, 'utf8');
@@ -50,7 +50,7 @@ const micBlockStart = findLine('let audioCtx = null, micStream = null, micWorkle
 const micBlockEnd = findLine('// ---- capture: system/meeting audio', micBlockStart + 1);
 
 // ---- extract the capture:state event handler, verbatim ----
-const handlerStart = findLine("cue.on('capture:state'", micBlockEnd + 1);
+const handlerStart = findLine("pue.on('capture:state'", micBlockEnd + 1);
 const handlerEnd = findLine('// ---- real-time transcript display', handlerStart + 1);
 
 if (micBlockStart === -1 || micBlockEnd === -1 || handlerStart === -1 || handlerEnd === -1) {
@@ -124,7 +124,7 @@ const $stub = (_sel) => genericEl();
 const composerStub = genericEl();
 
 const registered = {};
-const cueStub = {
+const pueStub = {
   platform: 'win32',
   log: (_msg) => {},
   micPcm: (_buf) => { micPcmMessages++; },
@@ -149,7 +149,7 @@ ${handlerCode}
 let buildFn;
 try {
   buildFn = new Function(
-    'navigator', 'cue', 'AudioContext', 'AudioWorkletNode', 'document',
+    'navigator', 'pue', 'AudioContext', 'AudioWorkletNode', 'document',
     'showStatus', 'isWindows', '$', 'composer', 'updateSttStatus', 'setLiveDotState',
     fnSource
   );
@@ -162,7 +162,7 @@ try {
 
 try {
   buildFn(
-    navigatorStub, cueStub, FakeAudioContext, FakeAudioWorkletNode, documentStub,
+    navigatorStub, pueStub, FakeAudioContext, FakeAudioWorkletNode, documentStub,
     showStatusStub, isWindowsStub, $stub, composerStub, updateSttStatusStub, setLiveDotStateStub
   );
 } catch (e) {
@@ -172,7 +172,7 @@ try {
 
 const handler = registered['capture:state'];
 if (typeof handler !== 'function') {
-  console.error("ORACLE_COULD_NOT_RUN: cue.on('capture:state', ...) never registered a handler");
+  console.error("ORACLE_COULD_NOT_RUN: pue.on('capture:state', ...) never registered a handler");
   process.exit(2);
 }
 
@@ -190,7 +190,7 @@ console.log(`extracted mic-block lines: ${micBlockStart + 1}-${micBlockEnd}`);
 console.log(`extracted capture:state handler lines: ${handlerStart + 1}-${handlerEnd}`);
 console.log(trackLog.join('\n'));
 console.log(`getUserMedia call count for ONE capture:state{active:true} event: ${getUserMediaCalls}`);
-console.log(`cue.micPcm() messages wired up (post-settle, not counting async worklet emissions): n/a (checked via call count above)`);
+console.log(`pue.micPcm() messages wired up (post-settle, not counting async worklet emissions): n/a (checked via call count above)`);
 console.log(`showStatus() calls: ${showStatusCalls}`);
 
 if (getUserMediaCalls === 1) {
@@ -199,7 +199,7 @@ if (getUserMediaCalls === 1) {
 } else if (getUserMediaCalls > 1) {
   console.log(`RESULT: ${getUserMediaCalls} concurrent mic capture pipelines started from ONE activation -- ` +
     'bug PRESENT (two AudioWorklet/AudioContext pipelines both feed the "you" channel; the interleaved, ' +
-    'doubled PCM this produces is exactly what cue PR #69 diagnosed as "meeting audio transcribed, the ' +
+    'doubled PCM this produces is exactly what pue PR #69 diagnosed as "meeting audio transcribed, the ' +
     "user's own voice didn't\" -- i.e. \"microphone input not detected\" during a session).");
   process.exit(1);
 } else {

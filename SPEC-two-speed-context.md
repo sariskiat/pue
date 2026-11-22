@@ -57,7 +57,7 @@ All tool outputs are wrapped in `<untrusted_context source="...">` before re-ent
 
 ### `src/llm.js` Streaming Tool-Loop Fixes
 
-To avoid breaking upstream `cue`'s streaming settlement (`src/llm.js:244,290,473`):
+To avoid breaking upstream `pue`'s streaming settlement (`src/llm.js:244,290,473`):
 
 1. **Per-provider tool adapters:**
    - **OpenAI / Azure / Compatible (`custom`, `groq`, `deepseek`, `cerebras`, `ollama`, `minimax`):** Pass `tools` array; accumulate streamed `delta.tool_calls` by `index` (`id`, `function.name`, `function.arguments`); append assistant `tool_calls` message and `{ role: 'tool', tool_call_id, content }` results.

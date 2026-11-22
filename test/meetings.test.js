@@ -6,7 +6,7 @@ const path = require('path');
 const { createMeetingStore } = require('../src/meetings');
 
 function tmpStore() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-meetings-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-meetings-'));
   return createMeetingStore({ file: path.join(dir, 'meetings.json') });
 }
 

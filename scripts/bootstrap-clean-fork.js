@@ -83,7 +83,7 @@ function main() {
   const srcRoot = process.argv[2];
   const dstRoot = path.resolve(__dirname, '..');
   if (!srcRoot || !fs.existsSync(srcRoot)) {
-    throw new Error('Pass path to cloned Blueturboguy07/cue repository as argv[2].');
+    throw new Error('Pass path to cloned Blueturboguy07/pue repository as argv[2].');
   }
 
   copyTreePreservingProtected(srcRoot, dstRoot);

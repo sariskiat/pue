@@ -45,7 +45,7 @@ test.beforeEach(() => { created = null; chunks = [text('ok'), finish('stop')]; }
 
 // ---- 1. "Thinking…" ---------------------------------------------------------
 
-test('llm: each chunk reports its kind, so cue can tell thinking from answering', async () => {
+test('llm: each chunk reports its kind, so pue can tell thinking from answering', async () => {
   chunks = [thinking('a'), { choices: [{ delta: { reasoning_content: 'b' } }] }, text('Answer.'), finish('stop')];
   const kinds = [];
   await createLLM(settings).stream({ system: 's', turns: [{ role: 'user', text: 'q' }], onToken: () => {}, onActivity: (k) => kinds.push(k) });
@@ -144,9 +144,9 @@ test('renderer: the honest message replaces "Thinking…" (the llm:error path)',
 });
 
 test('renderer: llm:thinking shows the placeholder and keeps the busy failsafe away', () => {
-  const start = rendererSrc.indexOf("cue.on('llm:thinking'");
+  const start = rendererSrc.indexOf("pue.on('llm:thinking'");
   assert.ok(start > -1, 'llm:thinking handler not found');
-  const handler = rendererSrc.slice(start, rendererSrc.indexOf("cue.on('", start + 10));
+  const handler = rendererSrc.slice(start, rendererSrc.indexOf("pue.on('", start + 10));
   assert.match(handler, /showThinking\(\);/);
   assert.match(handler, /onAnswerActivity\(\);/);
 });

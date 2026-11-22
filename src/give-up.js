@@ -1,4 +1,4 @@
-// A timer for a request cue stops waiting for. When it fires it rejects
+// A timer for a request pue stops waiting for. When it fires it rejects
 // `expired` (the caller races it against the stream) and aborts `signal`, so
 // the HTTP request is cancelled too: the provider stops generating and
 // billing an answer nobody will see. Without the abort, a

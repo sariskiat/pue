@@ -1,7 +1,7 @@
-// bugfix-lab oracle helper — cue-windows-meeting-audio-not-started
+// bugfix-lab oracle helper — pue-windows-meeting-audio-not-started
 //
-// Drives the REAL, already-launched cue renderer over Chrome DevTools Protocol:
-//   1. finds cue's main window target on the given --remote-debugging-port,
+// Drives the REAL, already-launched pue renderer over Chrome DevTools Protocol:
+//   1. finds pue's main window target on the given --remote-debugging-port,
 //   2. instruments navigator.mediaDevices.getDisplayMedia in place (wraps the
 //      real function so the app's own click handler still calls it — this does
 //      not change what the app does, it just records what came back),
@@ -11,13 +11,13 @@
 //      requires this) on #stop-btn, the same button labelled "Start / stop
 //      listening" that reporters click,
 //   5. polls until the instrumented getDisplayMedia call settles (or times out),
-//   6. reads the user-visible status text cue itself renders into #cue-status,
+//   6. reads the user-visible status text pue itself renders into #pue-status,
 //   7. captures a screenshot,
 //   8. prints one JSON line of evidence to stdout.
 //
 // This is not a tautology: it observes the real browser API's real return
-// value and the real DOM text cue's own renderer.js writes on failure —
-// exactly the entry point cue's own startSystemAudio() calls.
+// value and the real DOM text pue's own renderer.js writes on failure —
+// exactly the entry point pue's own startSystemAudio() calls.
 //
 // Exit codes (of THIS script — the .ps1 wrapper maps these to BUGFIX_LAB_*):
 //   0 = observation completed (evidence JSON printed; caller inspects it)
@@ -52,7 +52,7 @@ async function findPageTarget() {
     try {
       const list = await httpGetJson(`http://127.0.0.1:${PORT}/json/list`);
       const target = list.find(
-        (t) => t.type === 'page' && (t.title === 'cue' || /index\.html$/.test(t.url || ''))
+        (t) => t.type === 'page' && (t.title === 'pue' || /index\.html$/.test(t.url || ''))
       );
       if (target) return target;
     } catch (e) {
@@ -199,11 +199,11 @@ async function main() {
     await sleep(250);
   }
 
-  // 6. Read the user-visible status text cue itself writes on failure.
+  // 6. Read the user-visible status text pue itself writes on failure.
   const statusResult = await client.send('Runtime.evaluate', {
     expression: `
       (function() {
-        const el = document.getElementById('cue-status');
+        const el = document.getElementById('pue-status');
         return el ? el.textContent : null;
       })()
     `,

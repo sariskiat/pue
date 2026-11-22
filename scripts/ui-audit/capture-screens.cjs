@@ -1,6 +1,6 @@
 // Render every screen, tab, popover, and drawer of pue in real Electron,
 // capture PNG screenshots, and report DOM geometry / overflow clipping metrics.
-// Run with: PUE_SKIP_PERMISSIONS=1 CUE_NO_PROTECT=1 ./node_modules/.bin/electron scripts/ui-audit/capture-screens.cjs
+// Run with: PUE_SKIP_PERMISSIONS=1 PUE_NO_PROTECT=1 ./node_modules/.bin/electron scripts/ui-audit/capture-screens.cjs
 
 const { app } = require('electron');
 const fs = require('node:fs');

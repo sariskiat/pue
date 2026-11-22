@@ -79,7 +79,7 @@ const { locateWhisperRuntime } = require('./src/whisper-runtime');
 const { LocalWhisperTranscriber } = require('./src/local-whisper-transcriber');
 
 let win = null;
-// Which global shortcuts cue actually holds. `globalShortcut.register` returns
+// Which global shortcuts pue actually holds. `globalShortcut.register` returns
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
@@ -109,7 +109,7 @@ const WIN_SUPPORTS_CONTENT_PROTECTION = !isWindows || WIN_BUILD >= 19041;
 // Cloud PC session, most VM consoles, a CI runner's virtual desktop — the
 // same flag has been observed to make the window render nothing at all, to
 // the user as much as to any capture tool (see
-// cue-windows-overlay-not-visible-for-mic-grant: PrintWindow(PW_RENDERFULLCONTENT)
+// pue-windows-overlay-not-visible-for-mic-grant: PrintWindow(PW_RENDERFULLCONTENT)
 // sampled zero color variance, and a full-desktop screenshot showed the
 // always-on-top window occluding nothing, only ever reproduced with
 // protection on and never with it off). Windows sets the SESSIONNAME
@@ -399,21 +399,21 @@ function createWindow() {
   // render a WDA_EXCLUDEFROMCAPTURE window fully invisible, not just hidden
   // from capture). On older builds, or a non-local-console Windows session,
   // we skip it silently and send a warning to the renderer instead.
-  const shouldProtect = !process.env.CUE_NO_PROTECT && WIN_IS_LOCAL_CONSOLE_SESSION;
+  const shouldProtect = !process.env.PUE_NO_PROTECT && WIN_IS_LOCAL_CONSOLE_SESSION;
   if (shouldProtect) {
     if (isLinux) {
       // setContentProtection has no effect on Linux (no windowing-system-level
       // capture-exclusion primitive it can map to) — skip the no-op call and
       // say so, rather than pretending the window is hidden from screen shares.
-      console.log('[cue] Running on Linux: native screen protection (setContentProtection) is not supported and has been skipped.');
+      console.log('[pue] Running on Linux: native screen protection (setContentProtection) is not supported and has been skipped.');
     } else if (WIN_SUPPORTS_CONTENT_PROTECTION) {
       win.setContentProtection(true);
     } else {
       // Will notify the renderer after it loads
-      console.log(`[cue] Windows build ${WIN_BUILD} < 19041 — setContentProtection not supported. Window may appear in screen shares.`);
+      console.log(`[pue] Windows build ${WIN_BUILD} < 19041 — setContentProtection not supported. Window may appear in screen shares.`);
     }
-  } else if (isWindows && !WIN_IS_LOCAL_CONSOLE_SESSION && !process.env.CUE_NO_PROTECT) {
-    console.log(`[cue] Windows session is not a local console session (SESSIONNAME=${process.env.SESSIONNAME}) — skipping setContentProtection so the window stays visible to you. Window may appear in screen shares.`);
+  } else if (isWindows && !WIN_IS_LOCAL_CONSOLE_SESSION && !process.env.PUE_NO_PROTECT) {
+    console.log(`[pue] Windows session is not a local console session (SESSIONNAME=${process.env.SESSIONNAME}) — skipping setContentProtection so the window stays visible to you. Window may appear in screen shares.`);
   }
 
   win.setAlwaysOnTop(true, 'screen-saver', 1);
@@ -434,7 +434,7 @@ function createWindow() {
     win.showInactive();
     win.setTitle('Microsoft Edge Update');
     if (restoredTurns.length) {
-      // A meeting was in progress when cue last exited: put its transcript back
+      // A meeting was in progress when pue last exited: put its transcript back
       // in the sidebar so Recap / Follow-up pick up where the conversation was.
       const turns = restoredTurns;
       restoredTurns = [];
@@ -450,14 +450,14 @@ function createWindow() {
     }
     // Warn when protection was skipped because this is not a local console
     // session (RDP / Cloud PC / VM console) — see WIN_IS_LOCAL_CONSOLE_SESSION.
-    if (isWindows && !process.env.CUE_NO_PROTECT && !WIN_IS_LOCAL_CONSOLE_SESSION) {
+    if (isWindows && !process.env.PUE_NO_PROTECT && !WIN_IS_LOCAL_CONSOLE_SESSION) {
       send('status', {
         message: 'Heads up: screen-share hiding is off for this session (remote desktop / cloud PC / VM sessions can render the window invisible to you as well when it is on). The window will be visible in screen shares here.'
       });
     }
   });
   win.webContents.on('render-process-gone', (_e, d) => {
-    console.log('[cue] renderer gone', JSON.stringify(d));
+    console.log('[pue] renderer gone', JSON.stringify(d));
     recordEvent({ level: 'fatal', event: 'renderer_gone', code: d && d.reason, msg: 'renderer process ended: ' + JSON.stringify(d), frame: 'BrowserWindow' });
   });
 }
@@ -758,7 +758,7 @@ function resetSlidesSession() {
 }
 
 // -------- audio routing (streaming or batch) --------
-// Per-channel level report every few seconds while capturing, so "cue never
+// Per-channel level report every few seconds while capturing, so "pue never
 // hears me" reports can be told apart: no chunks (capture never reached the
 // main process), chunks but rms≈0 (a silent/muted device), or healthy audio
 // that the transcriber is dropping.
@@ -803,8 +803,8 @@ function routeAudio(channel, pcmBuffer) {
 
 // -------- capture toggle --------
 // Mic + system audio are both captured in the RENDERER (getUserMedia for the mic,
-// getDisplayMedia loopback for system audio) so they run inside cue's own process
-// and use cue's own Screen-Recording grant — no separate helper binary to authorize.
+// getDisplayMedia loopback for system audio) so they run inside pue's own process
+// and use pue's own Screen-Recording grant — no separate helper binary to authorize.
 async function setCapturing(active) {
   if (active === state.capturing) return state.capturing;
 
@@ -816,7 +816,7 @@ async function setCapturing(active) {
       try {
         await startLocalWhisper(settings);
         state.capturing = true;
-        console.log('[cue] capture started, mode: local');
+        console.log('[pue] capture started, mode: local');
         slideDisabled = false;
         slideTxCursor = transcript.length;
         slideStore = createSlideStore({ maxSlides: getSlidesConfig().maxSlides });
@@ -854,7 +854,7 @@ async function setCapturing(active) {
     slideLastHash = null;
     slideStableCount = 0;
     startSlideLoop();
-    console.log('[cue] capture started, mode:', streaming ? 'streaming' : 'batch');
+    console.log('[pue] capture started, mode:', streaming ? 'streaming' : 'batch');
     send('capture:state', { active: true, streaming: streamingMode, mode: streaming ? 'streaming' : 'batch' });
     send('slides:update', { count: 0, last: null });
     return true;
@@ -919,9 +919,9 @@ async function runFeature(mode, userText) {
       catch (e) {
         recordEvent({ level: 'error', event: 'screen_capture_failed', msg: e && e.message ? e.message : String(e), frame: 'captureScreenshot', context: { mode } });
         const message = process.platform === 'darwin'
-          ? 'Screen capture needs permission — grant Screen Recording to cue in System Settings.'
+          ? 'Screen capture needs permission — grant Screen Recording to pue in System Settings.'
           : process.platform === 'win32'
-            ? 'Screen capture failed. Make sure cue is not blocked by Windows privacy or security software, then try again.'
+            ? 'Screen capture failed. Make sure pue is not blocked by Windows privacy or security software, then try again.'
             : 'Screen capture failed. Check your desktop capture permissions, then try again.';
         send('status', { message });
       }
@@ -935,7 +935,7 @@ async function runFeature(mode, userText) {
     if (def.transcriptRequired && transcript.length === 0) {
       send('llm:error', { message: state.capturing
         ? 'Nothing has been transcribed yet — say something (or let the other side talk) and try again.'
-        : 'Nothing captured yet — press the listen button first so cue can hear the conversation.' });
+        : 'Nothing captured yet — press the listen button first so pue can hear the conversation.' });
       return;
     }
 
@@ -1013,7 +1013,7 @@ async function runFeature(mode, userText) {
     // Watchdog: a provider that stalls mid-stream would otherwise hang the await forever,
     // leaving state.busy = true and wedging every later question until an app restart.
     // When it gives up, the HTTP request is cancelled too (guard.signal), so the
-    // provider stops generating and billing an answer cue no longer shows.
+    // provider stops generating and billing an answer pue no longer shows.
     const guard = giveUpTimer(STREAM_INACTIVITY_MS, 'the model stopped responding (timed out). Please try again.');
     const cancelController = new AbortController();
     activeFeatureAbort = cancelController;
@@ -1695,7 +1695,7 @@ function launchApp() {
   session.defaultSession.setPermissionCheckHandler((_wc, permission) => allowMedia(permission));
 
   // System-audio loopback for getDisplayMedia: hand back a screen source with 'loopback'
-  // audio so the renderer can capture what's playing (Zoom/Meet) using cue's own grant.
+  // audio so the renderer can capture what's playing (Zoom/Meet) using pue's own grant.
   //
   // Two things are true here and both must hold.
   //
@@ -1708,7 +1708,7 @@ function launchApp() {
   //
   // 2. On macOS the grant is not free: the only route to system audio is a
   // ScreenCaptureKit session over a real display, so while it is held open macOS paints
-  // its screen-recording indicator and names cue under Control Center's "Currently
+  // its screen-recording indicator and names pue under Control Center's "Currently
   // Sharing" — pixels every screen-share viewer sees. Nothing app-side suppresses it
   // (an audio-only grant is rejected by Chromium; a window source lights the same
   // indicator), so the honest answer is consent: never open that session on macOS

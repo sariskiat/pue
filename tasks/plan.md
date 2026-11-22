@@ -5,7 +5,7 @@ Task list target: [tasks/todo.md](todo.md)
 
 ## 1. Overview
 
-`pue` forks `Blueturboguy07/cue` inside `/Users/saris.kia.adm/Desktop/pue` into a local, bring-your-own-key candidate interview copilot. It adds a persistent Global Candidate Profile (indexing experience files and local repositories into repo cards and provenance-tagged chunks), isolated Per-Job Workspaces (sharded JSON metadata plus append-only per-round JSONL event ledgers), automated post-round Session Dissection with a human-gated 3-tier Failure Journal, and a two-speed context harness (`< 20ms` U-shaped RRF retrieval for live call modes vs bounded read-only file-lookup tools for `Smart` and `Ask`).
+`pue` forks `Blueturboguy07/pue` inside `/Users/saris.kia.adm/Desktop/pue` into a local, bring-your-own-key candidate interview copilot. It adds a persistent Global Candidate Profile (indexing experience files and local repositories into repo cards and provenance-tagged chunks), isolated Per-Job Workspaces (sharded JSON metadata plus append-only per-round JSONL event ledgers), automated post-round Session Dissection with a human-gated 3-tier Failure Journal, and a two-speed context harness (`< 20ms` U-shaped RRF retrieval for live call modes vs bounded read-only file-lookup tools for `Smart` and `Ask`).
 
 ## 2. Dependency Graph
 
@@ -45,7 +45,7 @@ Phase 5: copilot-ui (Task 13 -> Task 14)
 Full acceptance criteria, TDD verification steps, and file lists live in [tasks/todo.md](todo.md).
 
 ### Phase 1: Foundation (`core-byok-fork`)
-- [x] Task 1: Seed `pue` from `cue` and remove standalone `publik`, `updater`, and `applink` files (`SPEC-core-byok-fork.md`)
+- [x] Task 1: Seed `pue` from `pue` and remove standalone `publik`, `updater`, and `applink` files (`SPEC-core-byok-fork.md`)
 - [x] Task 2: Strip `publik` from `store.js`, `llm.js`, and `stt.js` and add legacy migration seed (`SPEC-core-byok-fork.md`)
 - [x] Task 3: Strip `publik`, `updates`, and `applink` from `main.js`, `preload.js`, and `renderer/` (`SPEC-core-byok-fork.md`)
 - [x] Checkpoint 1: Clean BYOK fork boots and passes `npm test` + `node verify.js`
@@ -77,7 +77,7 @@ Full acceptance criteria, TDD verification steps, and file lists live in [tasks/
 
 | Risk | Impact | Mitigation |
 |---|---|---|
-| `cue`'s `settleAnswer()` throws empty-answer errors on text-less tool turns | High | Intercept tool-call stop reasons before `settleAnswer()` and test OpenAI, Anthropic, and Gemini streaming deltas explicitly in Task 12. |
+| `pue`'s `settleAnswer()` throws empty-answer errors on text-less tool turns | High | Intercept tool-call stop reasons before `settleAnswer()` and test OpenAI, Anthropic, and Gemini streaming deltas explicitly in Task 12. |
 | Large monorepo or symlink loop blocks Electron main thread during indexing | High | Enforce async yielding every 50 files, 5,000-entry walk cap, 500-file index cap, and canonical `realpath` cycle/escape guard in Task 5. |
 | Long interview transcripts overflow `recap` or live modes | Medium | Cap live windows and run non-destructive `compaction` entries preserving interviewer pushbacks verbatim in Task 10. |
 | Renderer edits break `verify.js` ordering or click-through mouse handling | Medium | Run `node verify.js` on every UI task (Tasks 3, 13, 14) and route new drawers through existing modal mouse-capture toggles. |

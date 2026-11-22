@@ -2,7 +2,7 @@
 // publik-balanced (xiaomi/mimo-v2.6-pro, OpenRouter its only host) sometimes
 // refuses harmless content: it streams "The request was rejected because it
 // was considered high risk" as normal content, alone or glued mid-word to a
-// partial answer, then finish_reason "content_filter". cue 0.2.12 showed that
+// partial answer, then finish_reason "content_filter". pue 0.2.12 showed that
 // sentence as the answer, gave a partial answer no note, read no stop reason
 // on the Anthropic and Gemini paths, and stored the sentence as meeting notes.
 // Only a clean stop is a whole answer now.
@@ -10,7 +10,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const Module = require('node:module');
 
-let requests = [];      // every OpenAI-style request cue sent
+let requests = [];      // every OpenAI-style request pue sent
 let replies = [];       // per request: an array of chunks, or an Error to reject with
 let anthropicEvents = [];
 let geminiChunks = [];
@@ -61,7 +61,7 @@ function publikSettings(overrides = {}) {
   return {
     provider: 'openai', smart: false,
     apiKeys: { openai: 'sk-own', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
-    azureEndpoint: 'https://cue-test.cognitiveservices.azure.com',
+    azureEndpoint: 'https://pue-test.cognitiveservices.azure.com',
     models: { openai: { fast: 'gpt-own', smart: 'gpt-own' } },
     ...overrides
   };
@@ -330,7 +330,7 @@ function notesHarness(settings) {
   const fs = require('fs');
   const os = require('os');
   const path = require('path');
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-cf-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-cf-'));
   const store = createMeetingStore({ file: path.join(dir, 'meetings.json') });
   const memory = createMeetingMemory({ store, llmFactory: () => createLLM(settings), now: () => 1_000_010, log: () => {}, minTurnsForNotes: 2 });
   memory.onTurn({ channel: 'them', text: 'The wick draws the melted wax up.', ts: 1_000_001 });

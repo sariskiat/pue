@@ -130,7 +130,7 @@ function clampSlidesConfig(input = {}) {
 }
 
 function buildSlideSystem() {
-  return 'You are cue, captioning a meeting slide. Describe the slide concisely: ' +
+  return 'You are pue, captioning a meeting slide. Describe the slide concisely: ' +
     'title on the first line, then 3-5 bullets for key points, visuals/charts, and any visible slide number. ' +
     'Plain text only, no preamble.';
 }

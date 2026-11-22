@@ -116,7 +116,7 @@ test('renderProfileSettings and deleteSelectedWorkspace escape XSS labels and co
         rounds: [{ id: 'r1', name: 'Round 1', turnCount: 6 }]
       }
     },
-    cue: {
+    pue: {
       profileRemoveItem: async () => {},
       profileDeprecateLesson: async () => {},
       workspaceDelete: async (id) => {

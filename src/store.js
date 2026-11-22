@@ -160,7 +160,7 @@ function redactForRenderer(s) {
 }
 
 function createSettingsStore(resolveUserDataDir) {
-  const fileStore = createFileStore(resolveUserDataDir, 'cue-data.json');
+  const fileStore = createFileStore(resolveUserDataDir, 'pue-data.json');
   let data = null;
   let lastError = null;
 

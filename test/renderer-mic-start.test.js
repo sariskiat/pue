@@ -11,9 +11,9 @@ const path = require('node:path');
 // of speech arrived twice and Deepgram/Gemini could not transcribe the mic.
 test('capture:state handler starts the mic exactly once and startMic is re-entrancy safe', () => {
   const src = fs.readFileSync(path.join(__dirname, '..', 'renderer/renderer.js'), 'utf8');
-  const start = src.indexOf("cue.on('capture:state'");
+  const start = src.indexOf("pue.on('capture:state'");
   assert.ok(start > -1, 'capture:state handler not found');
-  const end = src.indexOf("cue.on('", start + 10);
+  const end = src.indexOf("pue.on('", start + 10);
   const handler = src.slice(start, end > -1 ? end : undefined);
   assert.equal((handler.match(/\bstartMic\(\)/g) || []).length, 1, 'capture:state must call startMic() exactly once');
   assert.match(src, /const gen = \+\+micGen;[\s\S]*?if \(gen !== micGen \|\| micStream\)/, 'startMic must drop a superseded getUserMedia result');

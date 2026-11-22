@@ -49,7 +49,7 @@ test('preload exposes clean BYOK bridge without publik, applink, or updates chan
   try {
     delete require.cache[require.resolve('../preload')];
     require('../preload');
-    assert.ok(exposedApi, 'preload should expose window.cue');
+    assert.ok(exposedApi, 'preload should expose window.pue');
     for (const key of Object.keys(exposedApi)) {
       assert.equal(/^(publik|appLink|updates)/i.test(key), false, `unexpected method ${key}`);
     }

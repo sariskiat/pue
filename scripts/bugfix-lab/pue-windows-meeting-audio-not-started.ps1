@@ -1,12 +1,12 @@
-# bugfix-lab oracle — cue-windows-meeting-audio-not-started
+# bugfix-lab oracle — pue-windows-meeting-audio-not-started
 #
-# Population: guide-installers who self-build cue at the publik guide's pinned
-# commit (matches reporter 245f7947's "cue version 0.2.2, self-built via
-# `npm run pack:win`"). This script packages cue exactly the way the README's
-# Windows build instructions say to, launches the SAME dist\win-unpacked\cue.exe
+# Population: guide-installers who self-build pue at the publik guide's pinned
+# commit (matches reporter 245f7947's "pue version 0.2.2, self-built via
+# `npm run pack:win`"). This script packages pue exactly the way the README's
+# Windows build instructions say to, launches the SAME dist\win-unpacked\pue.exe
 # the reporter ran, clicks the same "Start / stop listening" button, and reads
-# cue's own on-screen status text plus the real return value of the browser
-# API cue calls (navigator.mediaDevices.getDisplayMedia) via CDP.
+# pue's own on-screen status text plus the real return value of the browser
+# API pue calls (navigator.mediaDevices.getDisplayMedia) via CDP.
 #
 # Prints BUGFIX_LAB_PRESENT / BUGFIX_LAB_ABSENT and exits 1 / 0 accordingly
 # (2 if the observation itself could not be completed), per LAB.md.
@@ -22,14 +22,14 @@ Write-Host "== npm run pack:win (same command the reporter used) =="
 npm run pack:win
 if ($LASTEXITCODE -ne 0) { Write-Host "BUGFIX_LAB_ABSENT (could not run: pack:win failed)"; exit 2 }
 
-$exe = "dist\win-unpacked\cue.exe"
+$exe = "dist\win-unpacked\pue.exe"
 if (-not (Test-Path $exe)) {
   Write-Host "BUGFIX_LAB_ABSENT (could not run: $exe not found after pack:win)"
   exit 2
 }
 
 Write-Host "== launching $exe with remote debugging =="
-$outLog = "cue-main-process.log"
+$outLog = "pue-main-process.log"
 $proc = Start-Process -FilePath $exe -ArgumentList "--remote-debugging-port=9222" `
   -RedirectStandardOutput $outLog -RedirectStandardError "$outLog.err" -PassThru -WindowStyle Normal
 
@@ -55,7 +55,7 @@ try {
   Write-Host "== cdp-observe.js result (screenshot omitted from log; see artifact) =="
   Write-Host ($summary | ConvertTo-Json -Compress)
   if ($result.screenshotBase64) {
-    [IO.File]::WriteAllBytes("cue-screenshot.png", [Convert]::FromBase64String($result.screenshotBase64))
+    [IO.File]::WriteAllBytes("pue-screenshot.png", [Convert]::FromBase64String($result.screenshotBase64))
   }
 } catch {
   Write-Host "(could not parse/decode cdp-result.json: $_)"
@@ -84,7 +84,7 @@ $reason = ""
 
 if ($statusText -and $statusText -like "*$errorNeedle*") {
   $present = $true
-  $reason = "cue's own #cue-status text matched the reporters' error verbatim: '$statusText'"
+  $reason = "pue's own #pue-status text matched the reporters' error verbatim: '$statusText'"
 } elseif ($getDisplayMediaOk -eq $false) {
   $present = $true
   $reason = "navigator.mediaDevices.getDisplayMedia() rejected: $($result.errorName) - $($result.errorMessage)"

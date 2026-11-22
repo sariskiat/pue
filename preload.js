@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 const platform = process.platform;
 
-contextBridge.exposeInMainWorld('cue', {
+contextBridge.exposeInMainWorld('pue', {
   platform,
   settingsGet: () => ipcRenderer.invoke('settings:get'),
   settingsSet: (patch) => ipcRenderer.invoke('settings:set', patch),

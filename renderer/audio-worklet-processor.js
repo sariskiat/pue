@@ -2,7 +2,7 @@
 // Replaces the deprecated ScriptProcessor. Receives Float32 audio, converts to Int16 PCM,
 // and sends to the main thread via MessagePort.
 
-class CueAudioProcessor extends AudioWorkletProcessor {
+class PueAudioProcessor extends AudioWorkletProcessor {
   constructor() {
     super();
     this._bufferSize = 4096; // accumulate before sending (matches old ScriptProcessor)
@@ -37,4 +37,4 @@ class CueAudioProcessor extends AudioWorkletProcessor {
   }
 }
 
-registerProcessor('cue-audio-processor', CueAudioProcessor);
+registerProcessor('pue-audio-processor', PueAudioProcessor);

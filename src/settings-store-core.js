@@ -1,4 +1,4 @@
-// Durable, atomic JSON file persistence for cue's settings store.
+// Durable, atomic JSON file persistence for pue's settings store.
 //
 // Why this exists as its own module: the previous store wrote the settings
 // file with a bare fs.writeFileSync (which truncates the destination before
@@ -9,7 +9,7 @@
 // because src/store.js calls app.getPath('userData') at require time, which
 // throws outside Electron.
 //
-// This module owns only the file mechanics — not cue's settings schema or
+// This module owns only the file mechanics — not pue's settings schema or
 // defaults, which stay in src/store.js as the single source of truth for
 // what a "settings object" is. Writes are atomic:
 //   1. serialize to FILE.tmp                (a crash here leaves the real file intact)
@@ -58,22 +58,22 @@ function createFileStore(resolveUserDataDir, label) {
       return { data: readJson(mainPath()), recoveredFromBackup: false };
     } catch (e) {
       mainMissing = e && e.code === 'ENOENT';
-      if (!mainMissing) console.error('[cue] cannot read ' + mainPath() + ':', e && e.message);
+      if (!mainMissing) console.error('[pue] cannot read ' + mainPath() + ':', e && e.message);
     }
 
     // The main file is gone or unusable. A stale .bak from the previous good
     // save is strictly better than blanking every key the user has stored.
     try {
       const data = readJson(bakPath());
-      console.error('[cue] ' + label + ' was lost or corrupt — recovered settings from backup');
+      console.error('[pue] ' + label + ' was lost or corrupt — recovered settings from backup');
       return { data, recoveredFromBackup: true };
     } catch (bakErr) {
       if (!(bakErr && bakErr.code === 'ENOENT')) {
-        console.error('[cue] cannot read backup ' + bakPath() + ':', bakErr && bakErr.message);
+        console.error('[pue] cannot read backup ' + bakPath() + ':', bakErr && bakErr.message);
       }
     }
 
-    if (!mainMissing) console.error('[cue] no usable backup for ' + label + '; starting from defaults');
+    if (!mainMissing) console.error('[pue] no usable backup for ' + label + '; starting from defaults');
     return null;
   }
 

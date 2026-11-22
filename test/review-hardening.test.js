@@ -203,7 +203,7 @@ test('main.js allowlists open-pane URIs, logs tool events, avoids meetingMemory 
   assert.match(mainSrc, /type:\s*'tool_call'/);
   assert.match(mainSrc, /type:\s*'tool_result'/);
 
-  const restoreIdx = rendererSrc.indexOf("cue.on('transcript:restore'");
+  const restoreIdx = rendererSrc.indexOf("pue.on('transcript:restore'");
   const afterRestore = rendererSrc.slice(restoreIdx, restoreIdx + 350);
   assert.match(afterRestore, /ts-list|clearTranscriptSidebar/);
 });

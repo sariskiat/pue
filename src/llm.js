@@ -198,7 +198,7 @@ function formatProviderErrorMessage(error, provider, model) {
 
   if (isNotFoundError(error)) {
     const modelHint = model ? ` "${model}"` : '';
-    return `${label} model${modelHint} is unavailable (404) — it may have been renamed, retired by the provider, or misspelled. Open Settings and pick a current model for ${label} (or clear the field to use cue's default), then try again.`;
+    return `${label} model${modelHint} is unavailable (404) — it may have been renamed, retired by the provider, or misspelled. Open Settings and pick a current model for ${label} (or clear the field to use pue's default), then try again.`;
   }
 
   return rawMessage || 'Unknown LLM error.';
@@ -224,7 +224,7 @@ function stripDataUrl(dataUrl) {
 // What a stream that ends with no usable answer says, instead of a blank
 // bubble. Reasoning models think inside the output cap: when the thinking
 // uses it all, the stream ends with finish_reason "length" and no text
-// (Cue audit 2026-11-04: 118 of 2,675 fast-tier answers came back empty).
+// (Pue audit 2026-11-04: 118 of 2,675 fast-tier answers came back empty).
 const LENGTH_EMPTY_MESSAGE = 'No answer this time: the model used its whole length limit on thinking and wrote nothing. Ask again, or ask a shorter question.';
 const EMPTY_ANSWER_MESSAGE = 'The model sent back an empty answer. Ask again.';
 const LENGTH_CUT_NOTE = '\n\n(Cut off: the answer reached its length limit.)';
@@ -239,7 +239,7 @@ const RECITATION_EMPTY_MESSAGE = 'The AI provider stopped this answer because it
 const RECITATION_CUT_NOTE = '\n\n(Incomplete: the AI provider stopped this answer because it repeated published text.)';
 const INCOMPLETE_CUT_NOTE = '\n\n(Incomplete: the answer stopped before the model finished. Ask again to get the rest.)';
 
-// Every stop reason cue knows, lower-cased: OpenAI-style finish_reason,
+// Every stop reason pue knows, lower-cased: OpenAI-style finish_reason,
 // Anthropic stop_reason, Gemini finishReason, and the end-of-turn words that
 // own-key OpenAI-compatible servers send instead of "stop" (TGI "eos_token",
 // llama.cpp/vLLM-style "eos", Anthropic-style "end_turn" and
@@ -459,7 +459,7 @@ function readChunk(part, onActivity) {
   return { text, finish: (choice && choice.finish_reason) || '' };
 }
 
-// SDK request options that carry cue's cancel signal (none: SDK defaults).
+// SDK request options that carry pue's cancel signal (none: SDK defaults).
 function requestOptions(signal) {
   return signal ? { signal } : undefined;
 }
@@ -504,7 +504,7 @@ async function streamOpenAI({ apiKey, baseURL, model, system, turns, imageDataUr
       messages.push({ role: t.role, content: t.text });
     }
   });
-  // signal: when cue stops waiting (watchdog, caption timer), the request is
+  // signal: when pue stops waiting (watchdog, caption timer), the request is
   // cancelled too, so the provider stops generating and billing it.
   const pending = client.chat.completions.create({ model, messages, stream: true, max_tokens: maxTokens }, requestOptions(signal));
   let stream;

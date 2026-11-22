@@ -39,7 +39,7 @@ function encodeScreenshot(img, { maxLongEdge = MAX_LONG_EDGE_PX, quality = JPEG_
  */
 function captureMacNative() {
   return new Promise((resolve) => {
-    const tmpPath = path.join(os.tmpdir(), `cue_capture_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
+    const tmpPath = path.join(os.tmpdir(), `pue_capture_${Date.now()}_${Math.random().toString(36).slice(2)}.png`);
     execFile('/usr/sbin/screencapture', ['-x', '-t', 'png', tmpPath], (err) => {
       if (err) return resolve(null);
       try {

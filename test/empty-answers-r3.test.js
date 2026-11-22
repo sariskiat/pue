@@ -18,8 +18,8 @@ const vm = require('vm');
 const { spawnSync } = require('child_process');
 const Module = require('node:module');
 
-let created = null;   // the request body cue sent
-let options = null;   // the SDK request options cue sent
+let created = null;   // the request body pue sent
+let options = null;   // the SDK request options pue sent
 let chunks = [];
 const originalModuleLoad = Module._load;
 Module._load = function loadWithOpenAIStub(request, parent, isMain) {
@@ -58,7 +58,7 @@ test.beforeEach(() => { created = null; options = null; chunks = [text('ok'), fi
 // ---- 2. stored meeting notes never carry the cut-off note --------------------
 
 function notesHarness() {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-notes-cut-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-notes-cut-'));
   const store = createMeetingStore({ file: path.join(dir, 'meetings.json') });
   let clock = 1_000_000;
   const memory = createMeetingMemory({ store, llmFactory: () => createLLM(ownSettings()), now: () => clock, log: () => {}, minTurnsForNotes: 2 });
@@ -137,7 +137,7 @@ test('4: the give-up timer aborts the request when it fires, after the last re-a
   assert.equal(settled.signal.aborted, false, 'a settled stream is never aborted');
 });
 
-test('4: llm.stream hands cue\'s cancel signal to the provider request', async () => {
+test('4: llm.stream hands pue\'s cancel signal to the provider request', async () => {
   const controller = new AbortController();
   await ask(ownSettings(), { imageDataUrl: IMAGE, signal: controller.signal });
   assert.equal(options && options.signal, controller.signal);
@@ -190,8 +190,8 @@ test('5: with no sign of life the failsafe still clears busy at 40 s', () => {
 
 test('5: the llm:token handler resets the failsafe too', () => {
   const src = source.readSource('renderer/renderer.js');
-  const start = src.indexOf("cue.on('llm:token'");
-  const handler = src.slice(start, src.indexOf("cue.on('", start + 10));
+  const start = src.indexOf("pue.on('llm:token'");
+  const handler = src.slice(start, src.indexOf("pue.on('", start + 10));
   assert.match(handler, /appendToken\(text\);/);
   assert.match(handler, /onAnswerActivity\(\);/);
 });
@@ -226,8 +226,8 @@ test('6a: the source-text helper finds its code on a CRLF checkout', () => {
 // with CRLF line ends and run those tests there.
 const out0 = (r) => String(r.stdout || '') + String(r.stderr || '');
 
-test('6b: the source-text tests pass on a CRLF copy of the repo', { skip: process.env.CUE_CRLF_CHILD ? 'already inside the CRLF copy' : false }, () => {
-  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-crlf-'));
+test('6b: the source-text tests pass on a CRLF copy of the repo', { skip: process.env.PUE_CRLF_CHILD ? 'already inside the CRLF copy' : false }, () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-crlf-'));
   try {
     const toCrlf = (rel) => {
       const to = path.join(tmp, rel);
@@ -242,7 +242,7 @@ test('6b: the source-text tests pass on a CRLF copy of the repo', { skip: proces
     assert.ok(fs.readFileSync(path.join(tmp, 'main.js'), 'utf8').includes('\r\n'));
     // A fresh test run: without NODE_TEST_CONTEXT, which marks a process as a
     // child of this runner and changes how it reports.
-    const env = { ...process.env, CUE_CRLF_CHILD: '1' };
+    const env = { ...process.env, PUE_CRLF_CHILD: '1' };
     delete env.NODE_TEST_CONTEXT;
     const r = spawnSync(process.execPath, ['--test', 'test/empty-answers.test.js', 'test/thinking-and-captions.test.js'],
       { cwd: tmp, env, encoding: 'utf8', timeout: 60000 });

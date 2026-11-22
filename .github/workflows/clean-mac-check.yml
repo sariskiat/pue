@@ -54,25 +54,25 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          FILE="cue-${{ inputs.version }}-mac-${{ matrix.arch }}.zip"
+          FILE="pue-${{ inputs.version }}-mac-${{ matrix.arch }}.zip"
           mkdir -p serve
           gh release download "${{ inputs.tag }}" -R "$GITHUB_REPOSITORY" --pattern "$FILE" --dir serve
           ls -l serve
           shasum -a 256 "serve/$FILE"
           (cd serve && nohup python3 -m http.server 8765 --bind 127.0.0.1 >/dev/null 2>&1 &)
           for i in $(seq 1 30); do curl -sf -o /dev/null -r 0-0 "http://127.0.0.1:8765/$FILE" && break; sleep 1; done
-          printf '[{"slug":"cue","file":"%s","url":"http://127.0.0.1:8765/%s","tag":"%s","runner":"%s"}]\n' "$FILE" "$FILE" "${{ inputs.tag }}" "${{ matrix.arch }}" > draft-apps.json
+          printf '[{"slug":"pue","file":"%s","url":"http://127.0.0.1:8765/%s","tag":"%s","runner":"%s"}]\n' "$FILE" "$FILE" "${{ inputs.tag }}" "${{ matrix.arch }}" > draft-apps.json
           cat draft-apps.json
 
       - name: Download (quarantine flag on), install to /Applications and open the app
-        run: bash check.sh draft-apps.json ${{ matrix.arch }} cue
+        run: bash check.sh draft-apps.json ${{ matrix.arch }} pue
 
       - name: Judge the result
         shell: bash
         run: |
           set -euo pipefail
           echo "--- results.jsonl"; cat results/results.jsonl
-          echo "--- log"; cat results/cue-*.log | sed -E 's/pat_[A-Za-z0-9_-]+/pat_REDACTED/g' | tail -60
+          echo "--- log"; cat results/pue-*.log | sed -E 's/pat_[A-Za-z0-9_-]+/pat_REDACTED/g' | tail -60
           python3 - "${{ inputs.version }}" <<'PY'
           import json, sys
           want = sys.argv[1]

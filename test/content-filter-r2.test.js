@@ -69,7 +69,7 @@ function publikSettings(overrides = {}) {
     provider: 'openai', smart: false,
     apiKeys: { openai: 'sk-own', custom: 'sk-custom', anthropic: 'sk-ant-own', gemini: 'g-own', azure: 'az-own' },
     baseUrl: 'http://127.0.0.1:1/v1',
-    azureEndpoint: 'https://cue-test.cognitiveservices.azure.com',
+    azureEndpoint: 'https://pue-test.cognitiveservices.azure.com',
     models: { openai: { fast: 'gpt-own-fast', smart: 'gpt-own-smart' }, custom: { fast: 'my-local', smart: 'my-local' } },
     ...overrides
   };
@@ -232,7 +232,7 @@ test('D3: stopKind: no reason is clean unless the stream shows it was cut short'
   assert.equal(stopKind('stop', false, { cutShort: true }), 'clean', 'a stop reason wins');
 });
 
-test('D3 guard: a cancelled stream (cue gave up) with no reason is incomplete', async () => {
+test('D3 guard: a cancelled stream (pue gave up) with no reason is incomplete', async () => {
   const controller = new AbortController();
   controller.abort();
   replies = [[text('Started to')]];

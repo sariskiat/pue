@@ -5,7 +5,7 @@ Depends on: `core-byok-fork`, `profile-repo-index`
 
 ## 1. Objective
 
-Replace `cue`'s flat `meetings.json` and single `jobDescription` field with sharded **Per-Job Workspaces**, append-only per-round JSONL event ledgers (*Pi* `session-manager.ts`), automated post-round **Session Dissection** (*Designing AI Agents* Ch. 4.4 and Ch. 7.2), and a human-gated 3-tier **Candidate Failure Journal** (*Designing AI Agents* Ch. 4.5 and Ch. 7.5).
+Replace `pue`'s flat `meetings.json` and single `jobDescription` field with sharded **Per-Job Workspaces**, append-only per-round JSONL event ledgers (*Pi* `session-manager.ts`), automated post-round **Session Dissection** (*Designing AI Agents* Ch. 4.4 and Ch. 7.2), and a human-gated 3-tier **Candidate Failure Journal** (*Designing AI Agents* Ch. 4.5 and Ch. 7.5).
 
 ## 2. Sharded Storage Layout & Schemas
 

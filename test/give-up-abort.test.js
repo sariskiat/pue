@@ -1,9 +1,9 @@
-// When cue gives up on an answer (watchdog, slide caption timer), the HTTP
+// When pue gives up on an answer (watchdog, slide caption timer), the HTTP
 // request must close, or publik keeps generating and billing it. Base 0.2.10
 // showed "timed out" at 25 s and was billed for 700 tokens at 42 s.
 // This test uses the real OpenAI SDK against a local server that streams
 // thinking and never answers, then checks that the server sees the
-// connection close soon after cue aborts.
+// connection close soon after pue aborts.
 const assert = require('node:assert/strict');
 const test = require('node:test');
 const http = require('http');
@@ -44,13 +44,13 @@ test('giving up closes the provider connection: the server stops streaming at on
     });
     answer.catch(() => {});
     await sleep(400);
-    assert.ok(thinkingSeen > 0, 'cue saw the thinking stream');
+    assert.ok(thinkingSeen > 0, 'pue saw the thinking stream');
     const gaveUpAt = Date.now() - t0;
     controller.abort(new Error('gave up'));            // what the watchdog / caption timer do
     await assert.rejects(answer);
     for (let i = 0; i < 40 && closedAt === null; i++) await sleep(25);
     assert.ok(closedAt !== null, `the server saw no close (log: ${log.join(', ')})`);
-    assert.ok(closedAt - gaveUpAt < 500, `closed ${closedAt - gaveUpAt} ms after cue gave up`);
+    assert.ok(closedAt - gaveUpAt < 500, `closed ${closedAt - gaveUpAt} ms after pue gave up`);
     assert.ok(!log.includes('ended'), 'the server did not stream to its end');
   } finally {
     server.closeAllConnections && server.closeAllConnections();

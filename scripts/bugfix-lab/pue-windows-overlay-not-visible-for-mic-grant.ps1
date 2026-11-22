@@ -1,14 +1,14 @@
-# Oracle for cue-windows-overlay-not-visible-for-mic-grant.
+# Oracle for pue-windows-overlay-not-visible-for-mic-grant.
 # Launches the packaged (unpacked) Windows build on a REAL, non-headless
 # desktop session (a GitHub-hosted windows-latest runner has one — unlike
-# Linux, no Xvfb needed) and asks Win32 directly whether cue's process owns
-# any visible, non-degenerate top-level window. cue deliberately retitles its
+# Linux, no Xvfb needed) and asks Win32 directly whether pue's process owns
+# any visible, non-degenerate top-level window. pue deliberately retitles its
 # window to "Microsoft Edge Update" (main.js: win.setTitle(...)) so a reporter
 # — and this oracle — cannot rely on window title or taskbar/Alt+Tab (the
 # window is WS_EX_TOOLWINDOW + skipTaskbar): only PID-owned HWNDs count.
 #
 # IsWindowVisible() alone is NOT enough: a first run of this oracle (CI run
-# 35653908412, https://github.com/Blueturboguy07/cue/actions/runs/35653908412)
+# 35653908412, https://github.com/Blueturboguy07/pue/actions/runs/35653908412)
 # found a window that was IsWindowVisible=true, at the exact expected
 # 700x600 centered rect — yet the saved desktop screenshot showed the
 # always-on-top ('screen-saver' level) window occluding NOTHING: the terminal
@@ -35,9 +35,9 @@ if ($LASTEXITCODE -ne 0) { Write-Result 2 "npm ci failed with exit $LASTEXITCODE
 npm run pack:win
 if ($LASTEXITCODE -ne 0) { Write-Result 2 "npm run pack:win failed with exit $LASTEXITCODE" }
 
-$exe = Get-ChildItem -Path "dist" -Recurse -Filter "cue.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+$exe = Get-ChildItem -Path "dist" -Recurse -Filter "pue.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exe) {
-    Write-Result 2 "no cue.exe found under dist/ after pack:win"
+    Write-Result 2 "no pue.exe found under dist/ after pack:win"
 }
 Write-Output "Found packaged exe: $($exe.FullName)"
 
@@ -90,13 +90,13 @@ Add-Type -TypeDefinition $sig -Language CSharp
 Add-Type -AssemblyName System.Windows.Forms
 Write-Output "[diag] SESSIONNAME=$env:SESSIONNAME TerminalServerSession=$([System.Windows.Forms.SystemInformation]::TerminalServerSession)"
 
-Write-Output "Launching cue.exe: $($exe.FullName)"
-$cueStdout = "$env:RUNNER_TEMP\cue-stdout.log"
-$cueStderr = "$env:RUNNER_TEMP\cue-stderr.log"
-$proc = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput $cueStdout -RedirectStandardError $cueStderr
+Write-Output "Launching pue.exe: $($exe.FullName)"
+$pueStdout = "$env:RUNNER_TEMP\pue-stdout.log"
+$pueStderr = "$env:RUNNER_TEMP\pue-stderr.log"
+$proc = Start-Process -FilePath $exe.FullName -PassThru -RedirectStandardOutput $pueStdout -RedirectStandardError $pueStderr
 Start-Sleep -Seconds 3
 if ($proc.HasExited) {
-    Write-Result 1 "cue.exe process exited immediately (code $($proc.ExitCode)) — no window could ever appear"
+    Write-Result 1 "pue.exe process exited immediately (code $($proc.ExitCode)) — no window could ever appear"
 }
 
 # Give the renderer time to load (did-finish-load -> showInactive()). Electron
@@ -105,9 +105,9 @@ $deadline = (Get-Date).AddSeconds(30)
 $hits = @()
 $allPids = @()
 while ((Get-Date) -lt $deadline) {
-    $cueProcs = Get-Process -Name "cue" -ErrorAction SilentlyContinue
-    if ($cueProcs) {
-        $allPids = $cueProcs | Select-Object -ExpandProperty Id
+    $pueProcs = Get-Process -Name "pue" -ErrorAction SilentlyContinue
+    if ($pueProcs) {
+        $allPids = $pueProcs | Select-Object -ExpandProperty Id
         $pidSet = New-Object 'System.Collections.Generic.HashSet[uint32]'
         foreach ($p in $allPids) { [void]$pidSet.Add([uint32]$p) }
         $hits = @([Win32Probe]::EnumerateForPids($pidSet))
@@ -117,8 +117,8 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 1000
 }
 
-Write-Output "cue.exe process count: $((Get-Process -Name 'cue' -ErrorAction SilentlyContinue | Measure-Object).Count); PIDs: $($allPids -join ',')"
-Write-Output "Total HWNDs owned by cue PIDs: $($hits.Count)"
+Write-Output "pue.exe process count: $((Get-Process -Name 'pue' -ErrorAction SilentlyContinue | Measure-Object).Count); PIDs: $($allPids -join ',')"
+Write-Output "Total HWNDs owned by pue PIDs: $($hits.Count)"
 foreach ($h in $hits) {
     Write-Output ("  HWND=0x{0:X} pid={1} visible={2} title='{3}' rect=({4},{5},{6}x{7})" -f $h.Handle.ToInt64(), $h.Pid, $h.Visible, $h.Title, $h.X, $h.Y, $h.Width, $h.Height)
 }
@@ -181,13 +181,13 @@ if ($visibleReal.Count -gt 0) {
                 Write-Output "PrintWindow capture: ${w}x${h}, sampled color spread (R+G+B max-min) = $spread"
                 # A real UI (toolbar pill, icons, text) spans many colors; a
                 # blank/transparent/uncomposited surface is ~flat. 24 is a
-                # generous floor — real cue UI in a working capture measured
+                # generous floor — real pue UI in a working capture measured
                 # in the hundreds.
                 if ($spread -gt 24) {
                     $contentRendered = $true
                     try {
-                        $capOutPath = "$env:GITHUB_WORKSPACE\cue-window-capture.png"
-                        if (-not $env:GITHUB_WORKSPACE) { $capOutPath = ".\cue-window-capture.png" }
+                        $capOutPath = "$env:GITHUB_WORKSPACE\pue-window-capture.png"
+                        if (-not $env:GITHUB_WORKSPACE) { $capOutPath = ".\pue-window-capture.png" }
                         $capBmp.Save($capOutPath)
                         Write-Output "Saved rendered window capture to $capOutPath"
                     } catch { Write-Output "Could not save window capture (non-fatal): $_" }
@@ -206,25 +206,25 @@ if ($visibleReal.Count -gt 0) {
 if (-not $proc.HasExited) {
     Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 }
-Get-Process -Name "cue" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "pue" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
-if (Test-Path $cueStdout) {
-    Write-Output "--- cue.exe stdout ---"
-    Get-Content $cueStdout | ForEach-Object { Write-Output "[cue-stdout] $_" }
+if (Test-Path $pueStdout) {
+    Write-Output "--- pue.exe stdout ---"
+    Get-Content $pueStdout | ForEach-Object { Write-Output "[pue-stdout] $_" }
 }
-if (Test-Path $cueStderr) {
-    Write-Output "--- cue.exe stderr ---"
-    Get-Content $cueStderr | ForEach-Object { Write-Output "[cue-stderr] $_" }
+if (Test-Path $pueStderr) {
+    Write-Output "--- pue.exe stderr ---"
+    Get-Content $pueStderr | ForEach-Object { Write-Output "[pue-stderr] $_" }
 }
 
 if ($visibleReal.Count -eq 0) {
-    Write-Result 1 "cue.exe is running (PIDs: $($allPids -join ',')) but EnumWindows found zero visible, non-degenerate top-level windows for it after 30s — this is the reported symptom (no UI surface to grant mic access)."
+    Write-Result 1 "pue.exe is running (PIDs: $($allPids -join ',')) but EnumWindows found zero visible, non-degenerate top-level windows for it after 30s — this is the reported symptom (no UI surface to grant mic access)."
 } elseif (-not $contentRendered) {
     $descs = $visibleReal | ForEach-Object { "$($_.Width)x$($_.Height)@($($_.X),$($_.Y))" }
     $joined = $descs -join '; '
-    Write-Result 1 "cue.exe has a Win32-visible top-level window ($joined) but PrintWindow(PW_RENDERFULLCONTENT) captured no meaningful content after 15s of retries (best sampled color spread = $maxSpread, threshold 24) — the window exists but renders nothing a human could see or click, matching the reported symptom."
+    Write-Result 1 "pue.exe has a Win32-visible top-level window ($joined) but PrintWindow(PW_RENDERFULLCONTENT) captured no meaningful content after 15s of retries (best sampled color spread = $maxSpread, threshold 24) — the window exists but renders nothing a human could see or click, matching the reported symptom."
 } else {
     $descs = $visibleReal | ForEach-Object { "$($_.Width)x$($_.Height)@($($_.X),$($_.Y))" }
     $joined = $descs -join '; '
-    Write-Result 0 "cue.exe has $($visibleReal.Count) visible top-level window(s) ($joined) and PrintWindow captured real rendered content (color spread = $maxSpread, threshold 24)."
+    Write-Result 0 "pue.exe has $($visibleReal.Count) visible top-level window(s) ($joined) and PrintWindow captured real rendered content (color spread = $maxSpread, threshold 24)."
 }

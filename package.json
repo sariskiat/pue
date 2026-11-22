@@ -3,7 +3,7 @@
   "version": "0.2.18",
   "description": "Local candidate interview copilot with global repo index and per-job workspaces.",
   "license": "GPL-3.0-or-later",
-  "author": "cue",
+  "author": "pue",
   "main": "main.js",
   "scripts": {
     "start": "electron .",

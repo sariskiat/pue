@@ -6,7 +6,7 @@ out/
 native/systemaudio
 *.log
 .DS_Store
-cue-data.json
+pue-data.json
 profile-index.json
 workspaces/
 *.env

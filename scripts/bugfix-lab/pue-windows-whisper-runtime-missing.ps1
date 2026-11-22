@@ -1,9 +1,9 @@
-# Oracle for cluster cue-windows-whisper-runtime-missing.
+# Oracle for cluster pue-windows-whisper-runtime-missing.
 #
 # Does exactly what the Windows install guide's "Install dependencies" and
-# "Build the installer" steps do (rendered from ~/publik/lib/guides/cue.ts via
+# "Build the installer" steps do (rendered from ~/publik/lib/guides/pue.ts via
 # render-guide.mts: `npm.cmd ci` then `npm.cmd run dist:win`), on a real
-# windows-latest runner, then inspects the REAL packaged output the way cue's
+# windows-latest runner, then inspects the REAL packaged output the way pue's
 # own main process does: it loads the shipped `src/whisper-runtime.js` out of
 # the packaged app directory and calls the exact function
 # (`locateWhisperRuntime`) that `main.js`'s `getWhisperRuntime()` calls, with
@@ -16,7 +16,7 @@
 # Exit 2 = oracle could not run (build itself failed, or output layout
 #          wasn't what we expected -- not evidence either way).
 #
-# Optional: set $env:CUE_BUNDLE_WHISPER = "1" before calling this script to
+# Optional: set $env:PUE_BUNDLE_WHISPER = "1" before calling this script to
 # run the opt-in bundling path instead (used as a sensitivity / negative
 # control run, never as the default reproduction).
 
@@ -24,7 +24,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Get-Location).Path
 
 Write-Host "=== environment ==="
-Write-Host "CUE_BUNDLE_WHISPER = '$($env:CUE_BUNDLE_WHISPER)'"
+Write-Host "PUE_BUNDLE_WHISPER = '$($env:PUE_BUNDLE_WHISPER)'"
 node --version
 npm --version
 

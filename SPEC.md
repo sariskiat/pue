@@ -1,11 +1,11 @@
 # Spec: pue Candidate Interview Copilot
 
-Master specification for `pue` (`/Users/saris.kia.adm/Desktop/pue`), forked from `Blueturboguy07/cue` and upgraded with context-perception and session-dissection patterns from *Designing AI Agents* (MEAP v4) and `earendil-works/pi`.
+Master specification for `pue` (`/Users/saris.kia.adm/Desktop/pue`), forked from `Blueturboguy07/pue` and upgraded with context-perception and session-dissection patterns from *Designing AI Agents* (MEAP v4) and `earendil-works/pi`.
 Confirmed intent: [docs/intent/pue-interview-copilot.md](docs/intent/pue-interview-copilot.md).
 
 ## 1. Objective
 
-Turn `cue` from a single-paste-box screen overlay into a local candidate interview copilot with two isolated context layers and automated post-round session dissection:
+Turn `pue` from a single-paste-box screen overlay into a local candidate interview copilot with two isolated context layers and automated post-round session dissection:
 
 1. **Global Candidate Profile:** Stores your experience documents (PDF, DOCX, Markdown, plain text), local code repositories, and human-approved cross-interview lessons (`promotedLessons`). Compiles compact repo summary cards and unified text chunks with provenance (`sourceId`, `relPath`, `startLine`, `endLine`, `mtimeMs`).
 2. **Per-Job Workspaces:** Isolates each job application with its own JD files, test files or folders, pre-call **Prep Brief**, append-only per-round JSONL event ledgers, post-round **Session Dissection** (comparing interviewer questions, copilot suggestions, your spoken answers, and repo/JD evidence), and a gated **Failure Journal**. Memory never crosses workspace boundaries.
@@ -23,7 +23,7 @@ Turn `cue` from a single-paste-box screen overlay into a local candidate intervi
 
 | Module id | Responsibility | Depends on | Spec |
 |---|---|---|---|
-| `core-byok-fork` | Fork `cue` into `/Users/saris.kia.adm/Desktop/pue`, remove `publik`, `applink`, telemetry, and self-updater, migrate legacy `cue-data.json` text fields | none | [SPEC-core-byok-fork.md](SPEC-core-byok-fork.md) |
+| `core-byok-fork` | Fork `pue` into `/Users/saris.kia.adm/Desktop/pue`, remove `publik`, `applink`, telemetry, and self-updater, migrate legacy `pue-data.json` text fields | none | [SPEC-core-byok-fork.md](SPEC-core-byok-fork.md) |
 | `profile-repo-index` | Global candidate profile for experience docs, local repos, and human-promoted lessons; hardened async repo walker, repo cards, unified chunk schema | `core-byok-fork` | [SPEC-profile-repo-index.md](SPEC-profile-repo-index.md) |
 | `job-workspaces` | Sharded per-job workspaces, append-only round JSONL ledgers, isolated round memory, Prep Briefs, post-round Session Dissector, and 3-tier Failure Journal | `core-byok-fork`, `profile-repo-index` | [SPEC-job-workspaces.md](SPEC-job-workspaces.md) |
 | `two-speed-context` | U-shaped 4-tier context triage, RRF (`k = 60`) chunk assembly, `PerceptionTrace` logging, `transformContext` compaction, grounding rules, and provider tool loops | `profile-repo-index`, `job-workspaces` | [SPEC-two-speed-context.md](SPEC-two-speed-context.md) |
@@ -37,7 +37,7 @@ Turn `cue` from a single-paste-box screen overlay into a local candidate intervi
 - **Document parsing:** Existing `pdf-parse` (`^1.1.1`) and `mammoth` (`^1.8.0`), plus Node `fs` for UTF-8 and UTF-16 BOM text and source files.
 - **LLM providers:** Existing `openai` (`^4.73.0`), `@anthropic-ai/sdk` (`^0.32.1`), `@google/genai` (`^2.12.0`), plus OpenAI-compatible endpoints (Groq, DeepSeek, Cerebras, Ollama, Azure, MiniMax, Custom).
 - **Speech-to-text:** Existing local `whisper.cpp` sidecar plus Deepgram, OpenAI, Groq, and Gemini STT.
-- **Target OS:** macOS 14.4+ primary (`setContentProtection(true)` preserved unless `CUE_NO_PROTECT=1`).
+- **Target OS:** macOS 14.4+ primary (`setContentProtection(true)` preserved unless `PUE_NO_PROTECT=1`).
 
 ## 4. Commands
 
@@ -69,7 +69,7 @@ npm run dist:mac:arm64
 ```text
 /Users/saris.kia.adm/Desktop/pue/
   main.js                      Electron entry, IPC handlers, capture, feature orchestration
-  preload.js                   Context-isolated window.cue IPC bridge
+  preload.js                   Context-isolated window.pue IPC bridge
   verify.js                    Static renderer wiring assertions
   package.json                 Scripts and dependencies (no publik or applink scripts)
   SPEC.md                      Master spec and capability map index
@@ -103,7 +103,7 @@ npm run dist:mac:arm64
 
 ## 6. Code Style
 
-Match upstream `cue`: plain CommonJS JavaScript, explicit error handling, zero external bundler, and pure testable logic in `src/` separated from Electron `app` and `ipcMain` wiring in `main.js`. Comments state why, not what.
+Match upstream `pue`: plain CommonJS JavaScript, explicit error handling, zero external bundler, and pure testable logic in `src/` separated from Electron `app` and `ipcMain` wiring in `main.js`. Comments state why, not what.
 
 Representative path-jail helper (hardened against deleted roots, non-existent leaf targets, symlink escapes, and case-insensitive volumes):
 
@@ -159,7 +159,7 @@ module.exports = { resolveScopedPath };
   - Require explicit user action before promoting any LLM-proposed Failure Journal lesson into active prompts.
 - **Ask first:**
   - Adding any npm package to `package.json`.
-  - Changing persisted JSON or JSONL schemas (`cue-data.json`, `profile-index.json`, `workspaces/index.json`, `workspaces/<id>.json`, `rounds/<rndId>.jsonl`, `failure-journal.jsonl`).
+  - Changing persisted JSON or JSONL schemas (`pue-data.json`, `profile-index.json`, `workspaces/index.json`, `workspaces/<id>.json`, `rounds/<rndId>.jsonl`, `failure-journal.jsonl`).
   - Changing Electron global shortcuts or overlay window content-protection flags.
 - **Never:**
   - Leave `publik` gating, `publik` telemetry, `publik` auto-updates, or `applink` local server endpoints active.

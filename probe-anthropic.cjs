@@ -1,4 +1,4 @@
-// Drives cue's own src/llm.js exactly the way the renderer would: provider=anthropic,
+// Drives pue's own src/llm.js exactly the way the renderer would: provider=anthropic,
 // no model override (so DEFAULT_MODELS.anthropic is used), a real key, one short turn.
 const { createLLM } = require('./src/llm.js');
 

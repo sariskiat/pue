@@ -1,4 +1,4 @@
-# Oracle for cue-windows-drag-permission-latency-bundle.
+# Oracle for pue-windows-drag-permission-latency-bundle.
 #
 # This cluster bundles six undifferentiated complaints from one Windows 11
 # reporter. Of those, "not able to give permission for screen and microphone
@@ -12,7 +12,7 @@
 # privacy toggle. This oracle does not grep for that code: it launches the
 # real packaged Windows build on a live (non-headless) desktop session and
 # asks Win32 directly, via EnumWindows, whether a window shaped like the
-# permission-gate window (500x540) EVER appears for the cue process, while
+# permission-gate window (500x540) EVER appears for the pue process, while
 # confirming the main 700x600 app window did appear (so a "not found" result
 # means "gate never shown", not "app never started").
 #
@@ -37,15 +37,15 @@ if ($LASTEXITCODE -ne 0) { Write-Result 2 "npm ci failed with exit $LASTEXITCODE
 npm run pack:win
 if ($LASTEXITCODE -ne 0) { Write-Result 2 "npm run pack:win failed with exit $LASTEXITCODE" }
 
-$exe = Get-ChildItem -Path "dist" -Recurse -Filter "cue.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+$exe = Get-ChildItem -Path "dist" -Recurse -Filter "pue.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
 if (-not $exe) {
-    Write-Result 2 "no cue.exe found under dist/ after pack:win"
+    Write-Result 2 "no pue.exe found under dist/ after pack:win"
 }
 Write-Output "Found packaged exe: $($exe.FullName)"
 
 # --- Win32 P/Invoke: enumerate ALL top-level windows, resolve each to its
 # owning process id, and report visibility + bounding rect. Same pattern as
-# the cue-windows-overlay-not-visible-for-mic-grant oracle in this campaign. ---
+# the pue-windows-overlay-not-visible-for-mic-grant oracle in this campaign. ---
 $sig = @'
 using System;
 using System.Collections.Generic;
@@ -89,15 +89,15 @@ public static class Win32Probe {
 '@
 Add-Type -TypeDefinition $sig -Language CSharp
 
-Write-Output "Launching cue.exe: $($exe.FullName)"
+Write-Output "Launching pue.exe: $($exe.FullName)"
 $proc = Start-Process -FilePath $exe.FullName -PassThru
 Start-Sleep -Seconds 3
 if ($proc.HasExited) {
-    Write-Result 2 "cue.exe process exited immediately (code $($proc.ExitCode)) -- cannot test permission gating"
+    Write-Result 2 "pue.exe process exited immediately (code $($proc.ExitCode)) -- cannot test permission gating"
 }
 
 # Poll for up to 25s, collecting every distinct window rect ever seen for a
-# cue.exe-owned HWND (not just the latest snapshot -- the permission window,
+# pue.exe-owned HWND (not just the latest snapshot -- the permission window,
 # if it existed, could open and be dismissed within the window).
 $deadline = (Get-Date).AddSeconds(25)
 $seenRects = New-Object 'System.Collections.Generic.List[string]'
@@ -106,9 +106,9 @@ $sawPermissionWindow = $false
 $allPids = @()
 $lastHits = @()
 while ((Get-Date) -lt $deadline) {
-    $cueProcs = Get-Process -Name "cue" -ErrorAction SilentlyContinue
-    if ($cueProcs) {
-        $allPids = $cueProcs | Select-Object -ExpandProperty Id
+    $pueProcs = Get-Process -Name "pue" -ErrorAction SilentlyContinue
+    if ($pueProcs) {
+        $allPids = $pueProcs | Select-Object -ExpandProperty Id
         $pidSet = New-Object 'System.Collections.Generic.HashSet[uint32]'
         foreach ($p in $allPids) { [void]$pidSet.Add([uint32]$p) }
         $hits = @([Win32Probe]::EnumerateForPids($pidSet))
@@ -130,7 +130,7 @@ while ((Get-Date) -lt $deadline) {
     Start-Sleep -Milliseconds 1000
 }
 
-Write-Output "cue.exe process count: $((Get-Process -Name 'cue' -ErrorAction SilentlyContinue | Measure-Object).Count); PIDs: $($allPids -join ',')"
+Write-Output "pue.exe process count: $((Get-Process -Name 'pue' -ErrorAction SilentlyContinue | Measure-Object).Count); PIDs: $($allPids -join ',')"
 Write-Output "Distinct window rects seen across the poll window: $($seenRects -join '; ')"
 Write-Output "Saw a main-app-shaped window (~700x600): $sawMainWindow"
 Write-Output "Saw a permission-gate-shaped window (~500x540): $sawPermissionWindow"
@@ -157,14 +157,14 @@ try {
 if (-not $proc.HasExited) {
     Stop-Process -Id $proc.Id -Force -ErrorAction SilentlyContinue
 }
-Get-Process -Name "cue" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
+Get-Process -Name "pue" -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 
 if (-not $sawMainWindow) {
-    Write-Result 2 "cue.exe ran (PIDs: $($allPids -join ',')) but no ~700x600 main-app window was ever observed -- cannot conclude anything about permission gating from this run. Rects seen: $($seenRects -join '; ')"
+    Write-Result 2 "pue.exe ran (PIDs: $($allPids -join ',')) but no ~700x600 main-app window was ever observed -- cannot conclude anything about permission gating from this run. Rects seen: $($seenRects -join '; ')"
 }
 
 if ($sawPermissionWindow) {
-    Write-Result 0 "A ~500x540 permission-gate window WAS observed for cue.exe -- Windows does get an in-app permission prompt. Rects seen: $($seenRects -join '; ')"
+    Write-Result 0 "A ~500x540 permission-gate window WAS observed for pue.exe -- Windows does get an in-app permission prompt. Rects seen: $($seenRects -join '; ')"
 } else {
-    Write-Result 1 "cue.exe launched straight to its main ~700x600 window; no ~500x540 permission-gate window was EVER observed across a 25s poll -- matches the report ('not able to give permission for screen and microphone coz there is no option'). Rects seen: $($seenRects -join '; ')"
+    Write-Result 1 "pue.exe launched straight to its main ~700x600 window; no ~500x540 permission-gate window was EVER observed across a 25s poll -- matches the report ('not able to give permission for screen and microphone coz there is no option'). Rects seen: $($seenRects -join '; ')"
 }

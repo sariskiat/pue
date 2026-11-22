@@ -1,23 +1,23 @@
-# bugfix-lab oracle — cue-windows-app-will-not-quit
+# bugfix-lab oracle — pue-windows-app-will-not-quit
 #
-# Population: guide-installers who followed publik's Windows guide for cue and
+# Population: guide-installers who followed publik's Windows guide for pue and
 # built it themselves (the guide's pinned commit is what this script's own
 # commit sits on top of — see oracle.sh, which force-pushes whatever commit is
-# checked out onto the CI branch). Report 8d3f1d5b: "installed cue vie windows
+# checked out onto the CI branch). Report 8d3f1d5b: "installed pue vie windows
 # installation instructions... after installing app and opening via start, it
-# is not closing... if i start cue from powershell and press Control+C it
-# closes." Report 9b5b37e4: "How to close the cue top floating thing?" with a
+# is not closing... if i start pue from powershell and press Control+C it
+# closes." Report 9b5b37e4: "How to close the pue top floating thing?" with a
 # screenshot of the toolbar's Quit control.
 #
-# main.js creates cue's window with frame:false, skipTaskbar:true,
+# main.js creates pue's window with frame:false, skipTaskbar:true,
 # alwaysOnTop:true, type:'toolbar' on Windows, and this app registers no Tray
 # icon anywhere (grepped: no `Tray` in main.js). That means the in-app
-# #quit-btn toolbar control is the ONLY UI path that can end a running cue
+# #quit-btn toolbar control is the ONLY UI path that can end a running pue
 # process on Windows — there is no native title-bar close box, no taskbar
 # entry to right-click, and no tray icon.
 #
-# This script packages cue the way the README's Windows build instructions
-# say to, launches the SAME dist\win-unpacked\cue.exe a self-built reporter
+# This script packages pue the way the README's Windows build instructions
+# say to, launches the SAME dist\win-unpacked\pue.exe a self-built reporter
 # would run, dispatches a genuine CDP mouse click on #quit-btn (the same
 # control shown in report 9b5b37e4's screenshot), and then observes the ONE
 # thing every reporter actually describes: does the OS process end. Not a
@@ -37,14 +37,14 @@ Write-Host "== npm run pack:win (same command the README's Windows build section
 npm run pack:win
 if ($LASTEXITCODE -ne 0) { Write-Host "BUGFIX_LAB_ABSENT (could not run: pack:win failed)"; exit 2 }
 
-$exe = "dist\win-unpacked\cue.exe"
+$exe = "dist\win-unpacked\pue.exe"
 if (-not (Test-Path $exe)) {
   Write-Host "BUGFIX_LAB_ABSENT (could not run: $exe not found after pack:win)"
   exit 2
 }
 
 Write-Host "== launching $exe with remote debugging (no API keys configured — same as a fresh install) =="
-$outLog = "cue-main-process.log"
+$outLog = "pue-main-process.log"
 $proc = Start-Process -FilePath $exe -ArgumentList "--remote-debugging-port=9222" `
   -RedirectStandardOutput $outLog -RedirectStandardError "$outLog.err" -PassThru -WindowStyle Normal
 
@@ -52,7 +52,7 @@ $proc = Start-Process -FilePath $exe -ArgumentList "--remote-debugging-port=9222
 Start-Sleep -Seconds 6
 
 if ($proc.HasExited) {
-  Write-Host "BUGFIX_LAB_ABSENT (could not run: cue.exe exited during startup, before any quit attempt — exit code $($proc.ExitCode))"
+  Write-Host "BUGFIX_LAB_ABSENT (could not run: pue.exe exited during startup, before any quit attempt — exit code $($proc.ExitCode))"
   exit 2
 }
 
@@ -68,7 +68,7 @@ try {
   Write-Host "== cdp-click-quit.js result (screenshot omitted from log; see artifact) =="
   Write-Host ($summary | ConvertTo-Json -Compress)
   if ($clickResult.screenshotBase64) {
-    [IO.File]::WriteAllBytes("cue-screenshot.png", [Convert]::FromBase64String($clickResult.screenshotBase64))
+    [IO.File]::WriteAllBytes("pue-screenshot.png", [Convert]::FromBase64String($clickResult.screenshotBase64))
   }
 } catch {
   Write-Host "(could not parse cdp-quit-result.json: $_)"

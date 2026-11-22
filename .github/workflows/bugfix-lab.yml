@@ -12,7 +12,7 @@ env:
 
 jobs:
   observe:
-    name: cue-windows-meeting-audio-not-started
+    name: pue-windows-meeting-audio-not-started
     runs-on: windows-latest
     steps:
       - name: Check out Git repository
@@ -28,7 +28,7 @@ jobs:
         id: oracle
         shell: pwsh
         run: |
-          .\scripts\bugfix-lab\cue-windows-meeting-audio-not-started.ps1
+          .\scripts\bugfix-lab\pue-windows-meeting-audio-not-started.ps1
           $code = $LASTEXITCODE
           "exit_code=$code" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           exit $code
@@ -46,9 +46,9 @@ jobs:
           name: bugfix-lab-evidence
           path: |
             cdp-result.json
-            cue-screenshot.png
-            cue-main-process.log
-            cue-main-process.log.err
+            pue-screenshot.png
+            pue-main-process.log
+            pue-main-process.log.err
           if-no-files-found: warn
 
       - name: Fail the job when the oracle could not run

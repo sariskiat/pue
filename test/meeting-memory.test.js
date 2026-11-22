@@ -9,7 +9,7 @@ const { createMeetingMemory } = require('../src/meeting-memory');
 const NOTES = 'Meeting Summary:\nAgreed to ship the Terraform pipeline Tuesday. Budget is $40k.\n\nKey Points:\n- Pipeline is green\n\nDecisions:\n- Ship Tuesday\n\nAction Items:\n- You: send the runbook\n\nFollow-Up:\n- Confirm budget with finance\n';
 
 function harness({ llmReady = true, llmText = NOTES, t0 = 1_000_000 } = {}) {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-memory-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-memory-'));
   const store = createMeetingStore({ file: path.join(dir, 'meetings.json') });
   let clock = t0;
   const llmCalls = [];
@@ -153,7 +153,7 @@ test('memoryBlock offers recent summaries but never the live meeting', async () 
 });
 
 test('store: prune keeps the newest N and debounced saves coalesce until flush', async () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'cue-memory-'));
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-memory-'));
   const file = path.join(dir, 'meetings.json');
   const s = createMeetingStore({ file, debounceMs: 50 });
   for (let i = 0; i < 4; i++) s.add();

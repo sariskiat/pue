@@ -1,13 +1,13 @@
-// bugfix-lab oracle helper — cue-windows-app-will-not-quit
+// bugfix-lab oracle helper — pue-windows-app-will-not-quit
 //
-// Drives the REAL, already-launched cue renderer over Chrome DevTools Protocol:
-//   1. finds cue's main window target on the given --remote-debugging-port,
-//   2. dismisses the first-run onboarding overlay if present (#ob-skip) — cue's
+// Drives the REAL, already-launched pue renderer over Chrome DevTools Protocol:
+//   1. finds pue's main window target on the given --remote-debugging-port,
+//   2. dismisses the first-run onboarding overlay if present (#ob-skip) — pue's
 //      own onboarding screen would otherwise sit on top of the toolbar and eat
 //      the click, which is not what any reporter describes,
-//   3. locates the SAME "Quit cue" toolbar control (#quit-btn) shown in report
-//      9b5b37e4's screenshot ("cue top floating thing" — the frameless,
-//      always-on-top, taskbar-skipping toolbar cue's main.js creates; this app
+//   3. locates the SAME "Quit pue" toolbar control (#quit-btn) shown in report
+//      9b5b37e4's screenshot ("pue top floating thing" — the frameless,
+//      always-on-top, taskbar-skipping toolbar pue's main.js creates; this app
 //      has no native window frame, no tray icon and no taskbar entry, so
 //      #quit-btn is the ONLY in-UI control that can end the process — see
 //      log.md for the main.js grep that established this),
@@ -55,7 +55,7 @@ async function findPageTarget() {
     try {
       const list = await httpGetJson(`http://127.0.0.1:${PORT}/json/list`);
       const target = list.find(
-        (t) => t.type === 'page' && (t.title === 'cue' || /index\.html$/.test(t.url || ''))
+        (t) => t.type === 'page' && (t.title === 'pue' || /index\.html$/.test(t.url || ''))
       );
       if (target) return target;
     } catch (e) {

@@ -136,8 +136,8 @@ function answerCode() {
   ];
   const follow = rendererSrc.indexOf('  // ---- follow the answer');
   if (follow > -1) parts.push(rendererSrc.slice(follow, rendererSrc.indexOf('\n  let busyFailsafe', follow)));
-  const start = rendererSrc.indexOf("  cue.on('llm:start'");
-  const end = rendererSrc.indexOf("  cue.on('transcript'", start);
+  const start = rendererSrc.indexOf("  pue.on('llm:start'");
+  const end = rendererSrc.indexOf("  pue.on('transcript'", start);
   assert.ok(start > -1 && end > start, 'llm handlers not found');
   parts.push(rendererSrc.slice(start, end));
   return parts.join('\n');
@@ -150,7 +150,7 @@ function boot() {
   const ctx = vm.createContext({
     messages: dom.messages,
     document: { createElement: dom.createElement, getElementById: () => null },
-    cue: { on: (ch, fn) => { handlers[ch] = fn; } },
+    pue: { on: (ch, fn) => { handlers[ch] = fn; } },
     requestAnimationFrame: (fn) => { frames.push(fn); return frames.length; },
     setBusy: () => {}, onAnswerActivity: () => {}, showStatus: () => {}, showPublikCard: () => {},
     publikActionButton: () => null,
@@ -234,7 +234,7 @@ test('a scrollbar drag or PageUp (no wheel event) stops the follow; the text sta
   }
 });
 
-test('a small scroll that stays within 40 px of the end keeps the follow, and cue\'s own scrolls never stop it', () => {
+test('a small scroll that stays within 40 px of the end keeps the follow, and pue\'s own scrolls never stop it', () => {
   const { fire, flush, m, hiddenBelow } = boot();
   fire('llm:start', { userBubble: 'Tell me about yourself.' });
   flush();

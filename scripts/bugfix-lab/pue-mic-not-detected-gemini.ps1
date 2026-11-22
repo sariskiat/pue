@@ -3,7 +3,7 @@ param(
 )
 
 # Runs mic-double-start-harness.mjs (extracts + executes the REAL
-# startMic()/stopMic() + cue.on('capture:state', ...) code, verbatim, out of
+# startMic()/stopMic() + pue.on('capture:state', ...) code, verbatim, out of
 # $TargetDir/renderer/renderer.js) on a real Windows runner, to rule out any
 # macOS-only timing quirk in the local repro. Node's await/microtask ordering
 # is defined by the ECMAScript spec, not the OS, but this cluster's repro_env

@@ -14,8 +14,8 @@ function locateWhisperRuntime({
   const target = getRuntimeTarget(platform, architecture);
   const candidates = [];
 
-  if (environment.CUE_WHISPER_RUNTIME) {
-    candidates.push(path.resolve(environment.CUE_WHISPER_RUNTIME));
+  if (environment.PUE_WHISPER_RUNTIME) {
+    candidates.push(path.resolve(environment.PUE_WHISPER_RUNTIME));
   }
   if (isPackaged && resourcesPath) {
     candidates.push(path.join(resourcesPath, 'whisper-runtime'));

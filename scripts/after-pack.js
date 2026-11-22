@@ -16,9 +16,9 @@ const { getRuntimeTarget } = require('../src/whisper-runtime-manifest');
  * runtime"). macOS instead builds whisper.cpp from source with cmake, which
  * needs Xcode command-line tools and a slower, toolchain-dependent build —
  * and its pinned source-archive checksum is the fragile one (see the note in
- * whisper-runtime-manifest.js) — so macOS stays opt-in via CUE_BUNDLE_WHISPER=1
+ * whisper-runtime-manifest.js) — so macOS stays opt-in via PUE_BUNDLE_WHISPER=1
  * to keep `npm run dist:mac`/`dist` and the signed macOS release from
- * suddenly requiring a local C++ toolchain. Set CUE_BUNDLE_WHISPER=0 to skip
+ * suddenly requiring a local C++ toolchain. Set PUE_BUNDLE_WHISPER=0 to skip
  * bundling on Windows/Linux too (a faster pack for local iteration).
  */
 module.exports = async function afterPack(context) {
@@ -27,10 +27,10 @@ module.exports = async function afterPack(context) {
   if (!platform || !architecture) throw new Error('electron-builder did not provide a runtime target.');
 
   const target = getRuntimeTarget(platform, architecture);
-  const explicitChoice = process.env.CUE_BUNDLE_WHISPER;
+  const explicitChoice = process.env.PUE_BUNDLE_WHISPER;
   const bundleWhisper = explicitChoice ? explicitChoice !== '0' : target.kind === 'archive';
   if (!bundleWhisper) {
-    console.log('[cue] Skipping the bundled whisper runtime (set CUE_BUNDLE_WHISPER=1 to include it on this platform).');
+    console.log('[pue] Skipping the bundled whisper runtime (set PUE_BUNDLE_WHISPER=1 to include it on this platform).');
     return;
   }
 

@@ -9,9 +9,9 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 
 ## Phase 1: Foundation (`core-byok-fork`)
 
-## Task 1: Seed `pue` from `cue` and remove standalone `publik`, `updater`, and `applink` files
+## Task 1: Seed `pue` from `pue` and remove standalone `publik`, `updater`, and `applink` files
 
-**Description:** Copy the cloned `Blueturboguy07/cue` tree into `/Users/saris.kia.adm/Desktop/pue` without overwriting `SPEC*.md`, `docs/intent/`, or `tasks/`. Remove the starter `main.py`, build a rule-based delete manifest with asserted count to remove standalone `publik`, `updater`, and `applink` files/scripts/tests, update `package.json` metadata (`name: "pue"`), and install dependencies.
+**Description:** Copy the cloned `Blueturboguy07/pue` tree into `/Users/saris.kia.adm/Desktop/pue` without overwriting `SPEC*.md`, `docs/intent/`, or `tasks/`. Remove the starter `main.py`, build a rule-based delete manifest with asserted count to remove standalone `publik`, `updater`, and `applink` files/scripts/tests, update `package.json` metadata (`name: "pue"`), and install dependencies.
 
 **Acceptance criteria:**
 - [x] `main.py`, `vendor/app-link`, `publik-updater.cjs`, `publik-update-verify.cjs`, `renderer/publik-card.js`, `src/publik*.js`, `src/publik-build.json`, `src/publik-gate-preload.cjs`, `src/applink*.js`, and `publik`/`updater`/`applink` test files are absent, verified by a rule-built count check before deletion.
@@ -20,7 +20,7 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Verification:**
 - [x] Tests pass: `node --test test/core-fork-layout.test.js`
 - [x] Build succeeds: `npm ls --depth=0`
-- [x] Manual check: Confirm `ls` shows `cue` codebase with `pue` `package.json` and zero standalone `publik*` or `applink*` files.
+- [x] Manual check: Confirm `ls` shows `pue` codebase with `pue` `package.json` and zero standalone `publik*` or `applink*` files.
 
 **Dependencies:** None
 
@@ -346,7 +346,7 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Description:** Update `renderer/index.html`, `renderer/renderer.js`, and `renderer/styles.css` to replace legacy pasted textareas with two Settings tabs: **Profile & Repos** (add/remove/reindex experience docs and repo folders with status badges and chunk counts; view/deprecate global promoted lessons) and **Job Workspaces** (create/edit/delete workspaces with confirmation, attach JD/test files and test folders, edit human P0 role notes).
 
 **Acceptance criteria:**
-- [x] Settings modal renders **Profile & Repos** and **Job Workspaces** tabs, calls the `window.cue.profile*` and `window.cue.workspace*` bridge methods, and escapes all file paths/names safely via DOM text nodes or HTML escaping.
+- [x] Settings modal renders **Profile & Repos** and **Job Workspaces** tabs, calls the `window.pue.profile*` and `window.pue.workspace*` bridge methods, and escapes all file paths/names safely via DOM text nodes or HTML escaping.
 - [x] Deleting a workspace with recorded rounds prompts for explicit confirmation before calling `workspaceDelete`.
 - [x] `node verify.js` passes all ordering checks.
 
@@ -379,7 +379,7 @@ Every task follows TDD: write `Given / When / Then` QA scenarios first, write fa
 **Verification:**
 - [x] Tests pass: `node --test test/overlay-dissection-ui.test.js && npm test`
 - [x] Build succeeds: `node verify.js`
-- [x] Manual check: Launch `CUE_NO_PROTECT=1 npm start` smoke check (or headless Electron smoke script) to confirm clean window boot and quit.
+- [x] Manual check: Launch `PUE_NO_PROTECT=1 npm start` smoke check (or headless Electron smoke script) to confirm clean window boot and quit.
 
 **Dependencies:** Task 13
 

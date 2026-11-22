@@ -58,7 +58,7 @@ async function closeSettingsWith({ settings, typed = {}, atOpen }) {
   let saved = null;
   const ctx = vm.createContext({
     $: el, settings, keysAtOpen: atOpen || { ...settings.apiKeys },
-    cue: { settingsSet: async (s) => { saved = JSON.parse(JSON.stringify(s)); return s; } },
+    pue: { settingsSet: async (s) => { saved = JSON.parse(JSON.stringify(s)); return s; } },
     clampOpacity: (x) => x, statusText: () => '', updateSmartTooltip: () => {}, Number
   });
   vm.runInContext(`${fnSource('saveSettings')}\nthis.run = saveSettings;`, ctx);

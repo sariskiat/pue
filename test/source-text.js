@@ -1,4 +1,4 @@
-// Helpers for tests that read cue's own source text (main.js, renderer.js,
+// Helpers for tests that read pue's own source text (main.js, renderer.js,
 // preload.js) and pick out a function or block. A Windows checkout with
 // core.autocrlf has CRLF line ends, and the "\n}\n" style searches below
 // would find nothing, so every read normalizes CRLF to LF first.

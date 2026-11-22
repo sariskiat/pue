@@ -117,7 +117,7 @@ test('Dissection & Failure Journal drawer renders XSS safely, wires lesson decis
         rounds: [{ id: 'rnd_1', name: 'Round 2' }]
       }
     },
-    cue: {
+    pue: {
       workspaceDecideLesson: async (wsId, lessonId, decision) => {
         decisions.push({ wsId, lessonId, decision });
         return { journal: { lessons: [] } };

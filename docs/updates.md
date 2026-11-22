@@ -1,29 +1,29 @@
 # Updates
 
-cue updates itself on macOS and Windows. Linux stays on manual download (the AppImage from the Releases
+pue updates itself on macOS and Windows. Linux stays on manual download (the AppImage from the Releases
 page). The code is `publik-updater.cjs` (the Electron part) and `publik-update-verify.cjs` (the signature
 check). Both files come from the publik Electron updater template (Blueturboguy07/surfcam, `docs/updates.md`).
-cue's copy adds two things, both generic: an optional `show` function for the messages, and the test-build
+pue's copy adds two things, both generic: an optional `show` function for the messages, and the test-build
 lock (see "Test builds and the proof").
 
 ## How it works
 
-1. The app asks `https://publikhq.com/api/updates/cue/` for two files: `latest.yml` (Windows) or
+1. The app asks `https://publikhq.com/api/updates/pue/` for two files: `latest.yml` (Windows) or
    `latest-mac.yml` (macOS), and the signature of that file (`latest.yml.sig` or `latest-mac.yml.sig`).
    It asks at launch (before the sign-in), every 24 hours, and when you click **Check for Updates…** at the
-   bottom of **Settings**. cue has no menu bar (no Dock icon, a frameless window), so the item is there.
+   bottom of **Settings**. pue has no menu bar (no Dock icon, a frameless window), so the item is there.
 2. The app verifies the signature with the publik update public key, which is in `publik-update-verify.cjs`.
    If the signature is missing or wrong, the app stops there. It downloads nothing.
-3. The feed must name this app (`publikApp: cue`) and give a sha512 for each file.
+3. The feed must name this app (`publikApp: pue`) and give a sha512 for each file.
 4. electron-updater downloads the file that the feed names. It refuses the file if its sha512 is not the
-   one in the signed feed. Windows downloads the NSIS installer (`cue-win-x64.exe`). macOS downloads the zip
+   one in the signed feed. Windows downloads the NSIS installer (`pue-win-x64.exe`). macOS downloads the zip
    of its architecture (the file whose name has `arm64` on Apple silicon, the other one on Intel), and
    Squirrel.Mac also refuses an app that does not satisfy the code signature of the running app (same
-   bundle ID `com.cue.overlay`, same Developer ID). This keeps the microphone and screen-recording grants.
-5. The app asks: "cue X is ready to install. Restart now?" **Later** installs the update when you quit.
+   bundle ID `com.pue.overlay`, same Developer ID). This keeps the microphone and screen-recording grants.
+5. The app asks: "pue X is ready to install. Restart now?" **Later** installs the update when you quit.
    The app never restarts by itself.
 
-The messages appear inside cue's window, like the assistant access request: an app with no Dock icon
+The messages appear inside pue's window, like the assistant access request: an app with no Dock icon
 cannot bring a native dialog forward. A message that comes before the window exists waits for it.
 A failure in the background is silent (the log has it). A manual check always shows its result.
 `PUBLIK_UPDATES=0` in the environment stops the automatic checks. The CI workflows set it.
@@ -32,10 +32,10 @@ A failure in the background is silent (the log has it). A manual check always sh
 
 | Request | Response |
 |---|---|
-| `GET /api/updates/cue/latest.yml` | the release asset `latest.yml`, byte for byte |
-| `GET /api/updates/cue/latest.yml.sig` | the release asset `latest.yml.sig`, byte for byte |
-| `GET /api/updates/cue/latest-mac.yml` | the release asset `latest-mac.yml`, byte for byte |
-| `GET /api/updates/cue/latest-mac.yml.sig` | the release asset `latest-mac.yml.sig`, byte for byte |
+| `GET /api/updates/pue/latest.yml` | the release asset `latest.yml`, byte for byte |
+| `GET /api/updates/pue/latest.yml.sig` | the release asset `latest.yml.sig`, byte for byte |
+| `GET /api/updates/pue/latest-mac.yml` | the release asset `latest-mac.yml`, byte for byte |
+| `GET /api/updates/pue/latest-mac.yml.sig` | the release asset `latest-mac.yml.sig`, byte for byte |
 
 - Serve the files from the scan-approved release without changes. One changed byte breaks the signature.
 - The app adds `?noCache=<random>` to each request. Ignore the query string.
@@ -52,12 +52,12 @@ A mac feed file looks like this (`scripts/publik-update-feed.cjs write` makes it
 
 ```yaml
 version: '0.2.16'
-publikApp: 'cue'
+publikApp: 'pue'
 files:
-  - url: 'https://github.com/Blueturboguy07/cue/releases/download/v0.2.16/cue-0.2.16-mac-x64.zip'
+  - url: 'https://github.com/Blueturboguy07/pue/releases/download/v0.2.16/pue-0.2.16-mac-x64.zip'
     sha512: '<base64>'
     size: 123456789
-  - url: 'https://github.com/Blueturboguy07/cue/releases/download/v0.2.16/cue-0.2.16-mac-arm64.zip'
+  - url: 'https://github.com/Blueturboguy07/pue/releases/download/v0.2.16/pue-0.2.16-mac-arm64.zip'
     sha512: '<base64>'
     size: 123456789
 path: '<the url of the first file>'
@@ -65,7 +65,7 @@ sha512: '<the sha512 of the first file>'
 releaseDate: '2026-11-18T00:00:00.000Z'
 ```
 
-`latest.yml` has one file, `cue-win-x64.exe`. Its name carries no version, so the feed script checks the
+`latest.yml` has one file, `pue-win-x64.exe`. Its name carries no version, so the feed script checks the
 version in the installer's version resource (ProductVersion) instead.
 
 The `.sig` file is a minisign signature of the feed file. The app accepts these forms:
@@ -93,7 +93,7 @@ It does every step, in this order, and stops before publishing when any check fa
 
 1. Checks: the tree is clean, `main` is in step with origin, X.Y.Z is higher than the last release, the tag
    `vX.Y.Z` is free. If `package.json` is not at X.Y.Z yet, it bumps `package.json` and `package-lock.json`
-   (the two files a bump touches), commits `release: cue vX.Y.Z` and pushes (`PUBLIK_RELEASE_TRAILER` adds a
+   (the two files a bump touches), commits `release: pue vX.Y.Z` and pushes (`PUBLIK_RELEASE_TRAILER` adds a
    trailer line). Then every bump file must say X.Y.Z.
 2. CI build: **publik build** (`publik-build.yml`) for that commit, or an earlier green run of the same commit.
    It builds the Windows installer, the two Linux AppImages and the two macOS apps (unsigned), checks the
@@ -102,9 +102,9 @@ It does every step, in this order, and stops before publishing when any check fa
 4. macOS, per architecture: signs the app with `Developer ID Application: Mann Bellani (R5R3ZS54LV)` (inner
    code first, hardened runtime, `build-resources/entitlements.mac.plist`), notarizes it
    (`xcrun notarytool submit --keychain-profile publik --wait`), staples it, checks it, and zips it
-   (`ditto -c -k --sequesterRsrc --keepParent`): `cue-X.Y.Z-mac-x64.zip`, `cue-X.Y.Z-mac-arm64.zip`.
-   cue ships zips only (Squirrel.Mac installs from the zip), no dmg, as every earlier release.
-5. Uploads `cue-win-x64.exe`, the two AppImages and `SHA256SUMS.txt` to the draft.
+   (`ditto -c -k --sequesterRsrc --keepParent`): `pue-X.Y.Z-mac-x64.zip`, `pue-X.Y.Z-mac-arm64.zip`.
+   pue ships zips only (Squirrel.Mac installs from the zip), no dmg, as every earlier release.
+5. Uploads `pue-win-x64.exe`, the two AppImages and `SHA256SUMS.txt` to the draft.
 6. The feed: `scripts/publik-update-feed.cjs release --force` with the update key from the keychain (service
    `publik-update-key`, accounts `mann-private` and `mann-password`; the key goes to that process only and is
    never printed): `latest.yml`, `latest-mac.yml` and their `.sig`, with absolute GitHub URLs.
@@ -123,7 +123,7 @@ commits after it may change only the release tooling (this script, `docs/`, `.gi
 script can go on `main` between two runs. If the app changed after that commit, the script stops: delete the
 draft and release a new version. GitHub allows 5,000 API calls an hour per user; when the limit is reached,
 the script waits for the reset (it asks GitHub about CI runs once per 90 s, `PUBLIK_RELEASE_POLL_S`). It needs about 1.5 GB of free disk
-(`PUBLIK_RELEASE_MIN_FREE_MB`) and works in `$TMPDIR/publik-release-cue-vX.Y.Z` (`PUBLIK_RELEASE_WORK`), which it
+(`PUBLIK_RELEASE_MIN_FREE_MB`) and works in `$TMPDIR/publik-release-pue-vX.Y.Z` (`PUBLIK_RELEASE_WORK`), which it
 deletes at the end. publik takes new releases in once a day at 10:00 UTC; until then the feed on publikhq.com
 serves the previous release.
 
@@ -144,32 +144,32 @@ update with the real thing, on GitHub's macOS (Apple silicon and Intel) and Wind
 1. It downloads the `from_tag` release file from its public GitHub URL (the file publik links), checks it
    against `SHA256SUMS.txt` and the release's signed feed, and on macOS sets the quarantine flag and checks
    Gatekeeper (`spctl`: "Notarized Developer ID") and the stapled ticket. It installs as a user does: Finder
-   moves `cue.app` to /Applications; Windows runs the installer with `/S`. A user's own Finder drag turns off
+   moves `pue.app` to /Applications; Windows runs the installer with `/S`. A user's own Finder drag turns off
    App Translocation; a scripted Finder move does not (macOS then runs a read-only copy from a random folder,
    where no update can install). So, after the Gatekeeper check, the proof removes the quarantine flag from
-   the installed copy and checks that cue runs from /Applications.
-2. macOS: it records the designated requirement and writes real TCC grants for `com.cue.overlay` (microphone and
+   the installed copy and checks that pue runs from /Applications.
+2. macOS: it records the designated requirement and writes real TCC grants for `com.pue.overlay` (microphone and
    camera in the user TCC.db, screen recording and accessibility in the system TCC.db, each with the `csreq`
    blob of that requirement), in the schema of the runner's macOS.
-3. It starts the installed app the normal way (`open -a`; on Windows the installed `cue.exe`). No test build,
-   no test hook, no feed override: the app asks `https://publikhq.com/api/updates/cue/`. Two variables keep a
+3. It starts the installed app the normal way (`open -a`; on Windows the installed `pue.exe`). No test build,
+   no test hook, no feed override: the app asks `https://publikhq.com/api/updates/pue/`. Two variables keep a
    runner honest and do not touch the update path: `DO_NOT_TRACK=1`, and `PUBLIK_ORIGIN=http://127.0.0.1:9`
    (the sign-in gate's account API), so the gate stays on "publik is not reachable" and the runner is never
    registered as a publik install. One Chromium switch, `--log-net-log`, records the URLs the app requests.
 4. It waits for the updater: with `expect_version` = the `from_tag` version, the app must log "Update for
    version X is not available" after a valid signature and download nothing. With a higher version, the app
    must find it, download the file of its own platform from GitHub and (macOS) have Squirrel.Mac stage it.
-   The restart question shows in cue's main window, which exists only after the sign-in, so at the gate there
+   The restart question shows in pue's main window, which exists only after the sign-in, so at the gate there
    is no question: the proof checks the "Later" path (the app keeps running on the old version), closes the
-   gate window as a user does (the update installs at quit), checks the version on disk and that cue did not
-   start by itself, opens cue again and checks that the running app says it is up to date at the new version.
+   gate window as a user does (the update installs at quit), checks the version on disk and that pue did not
+   start by itself, opens pue again and checks that the running app says it is up to date at the new version.
 5. macOS after the update: the same designated requirement, Gatekeeper still accepts the app, every TCC row is
    still there and the updated app satisfies each stored `csreq` (`codesign --verify -R`). That is the check
    tccd makes. A runner cannot show a consent prompt, so this is the proof that no new prompt is needed. The
-   TCC log must show no microphone, camera, screen or system-audio request from cue.
+   TCC log must show no microphone, camera, screen or system-audio request from pue.
 
-cue never gets past the sign-in gate in the proof, and every microphone, camera and screen call of cue comes
-after that gate (`test/updater-wiring.test.js` checks the order), so the grants cannot make cue capture.
+pue never gets past the sign-in gate in the proof, and every microphone, camera and screen call of pue comes
+after that gate (`test/updater-wiring.test.js` checks the order), so the grants cannot make pue capture.
 "Check for Updates…" (the Settings button), the restart question and the 24-hour check are not reachable at
 the gate: `test/updater-schedule.test.js` covers them (the workflow's unit job runs it).
 
@@ -207,15 +207,15 @@ runners (Apple silicon and Intel). It builds two test versions, N and N+1, with
 
 | Variable | Effect (test builds only) |
 |---|---|
-| `PUBLIK_UPDATE_URL` | replaces `https://publikhq.com/api/updates/cue/` |
+| `PUBLIK_UPDATE_URL` | replaces `https://publikhq.com/api/updates/pue/` |
 | `PUBLIK_UPDATER_TEST=report` | writes the running version to `PUBLIK_UPDATER_RESULT` and exits |
 | `PUBLIK_UPDATER_TEST=update` | runs the same check, download and install, writes the result, quits to install |
 
 The test hook runs first in `app.whenReady()`, so a test run never reaches the sign-in gate, the permission
 requests, the window, the microphone or a screenshot (`test/updater-wiring.test.js` checks the order).
-A test build started WITHOUT `PUBLIK_UPDATER_TEST` exits at once: it never runs cue itself. The proof
-checks that, checks that no cue process is left running after any start or after the install, blocks
-publikhq.com on the runner, and on macOS reads the TCC log: cue must not ask for the microphone, the camera
+A test build started WITHOUT `PUBLIK_UPDATER_TEST` exits at once: it never runs pue itself. The proof
+checks that, checks that no pue process is left running after any start or after the install, blocks
+publikhq.com on the runner, and on macOS reads the TCC log: pue must not ask for the microphone, the camera
 or the screen.
 
 Test versions are `0.0.0-updtest.*`. A test feed that the real key signs is therefore never newer than a
@@ -234,8 +234,8 @@ The proof also runs the repo's own CI (`ci.yml`) on the same commit.
 4. In the main process, first thing in `app.whenReady()`:
    `if (startUpdates({ slug: '<slug>', appName: '<Name>' }).testHook) return;`
    If the app has its own menu, call `startUpdates({ ..., menu: false })` and add `updates.menuItem()`.
-   If the app has no Dock icon, pass `show` and show the messages in the app's own window (as cue does).
-5. Replace `cue` and the file names in `update-feed.yml`, `updater-proof.yml` and `updater-proof.cjs`
+   If the app has no Dock icon, pass `show` and show the messages in the app's own window (as pue does).
+5. Replace `pue` and the file names in `update-feed.yml`, `updater-proof.yml` and `updater-proof.cjs`
    (bundle ID check, installer names, the Windows uninstall entry name).
 6. Add the repo secrets `PUBLIK_UPDATE_KEY` and `PUBLIK_UPDATE_KEY_PASSWORD`.
 7. Add `PUBLIK_UPDATES: '0'` to the workflows that launch the app, and exclude `v*-updtest*` tags from

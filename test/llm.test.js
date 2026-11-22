@@ -321,7 +321,7 @@ test('formatProviderErrorMessage: an unrecognized error passes its raw message t
 
 test('isQuotaError: agrees with formatProviderErrorMessage on what counts as quota', () => {
   // A 429 whose body says nothing about quota is a rate limit, not exhaustion
-  // (cue-quota-exhausted-429-false-positive): it used to be classified as quota
+  // (pue-quota-exhausted-429-false-positive): it used to be classified as quota
   // purely because the status was 429, which is what produced the false
   // "free-tier quota exhausted" message on accounts that had plenty of credit.
   assert.equal(isQuotaError(geminiApiError({ status: 429, body: {} })), false);
@@ -332,7 +332,7 @@ test('isQuotaError: agrees with formatProviderErrorMessage on what counts as quo
 });
 
 // ---- Anthropic/OpenAI genuine rate limit vs. quota exhaustion --------------
-// Regression coverage for cue-quota-exhausted-429-false-positive: a plain
+// Regression coverage for pue-quota-exhausted-429-false-positive: a plain
 // per-minute/RPM rate limit is NOT an account-exhaustion signal and must not
 // be reported to the user as "free-tier quota exhausted". Anthropic's API
 // has no separate "quota" concept at all -- every Anthropic 429 is a
@@ -445,7 +445,7 @@ test('createLLM: leaves a user-chosen current Gemini model alone', () => {
 
 // A 429 carrying NO quota signal at all is the shape most providers send under
 // load, and it is the smallest input that used to produce the false message
-// (REGION.json's minimal_repro for cue-quota-exhausted-429-false-positive).
+// (REGION.json's minimal_repro for pue-quota-exhausted-429-false-positive).
 test('formatProviderErrorMessage: a bare 429 with no upstream body is a rate limit, not quota exhaustion', () => {
   const message = formatProviderErrorMessage({ status: 429 }, 'anthropic', 'claude-3-5-haiku-latest');
   assert.doesNotMatch(message, /free-tier quota exhausted/i);

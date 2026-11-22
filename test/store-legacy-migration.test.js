@@ -17,7 +17,7 @@ test('consumeLegacyProfileSeed extracts legacy text once, preserves API keys, an
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pue-store-'));
   try {
     fs.writeFileSync(
-      path.join(tmpDir, 'cue-data.json'),
+      path.join(tmpDir, 'pue-data.json'),
       JSON.stringify({
         provider: 'publik',
         apiKeys: { openai: 'sk-keep-me', anthropic: 'sk-ant-keep', publik: 'pk_old' },
