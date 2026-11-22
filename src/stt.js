@@ -30,17 +30,20 @@ function buildVocabPrompt(settings) {
   return prompt;
 }
 
+const BILINGUAL_AUDIO_PREFIX =
+  'Audio is spoken in Thai (ภาษาไทย) or English; transcribe spoken words verbatim without translating. ';
+
 async function transcribeOpenAI(apiKey, wav, model, baseURL, prompt, clientOptions = {}) {
   const OpenAI = require('openai');
   const toFile = OpenAI.toFile || require('openai/uploads').toFile;
   const client = new OpenAI({ apiKey, baseURL, ...clientOptions });
   const file = await toFile(wav, 'audio.wav', { type: 'audio/wav' });
+  const fullPrompt = (BILINGUAL_AUDIO_PREFIX + (prompt || '')).slice(0, 950).trim();
   const res = await client.audio.transcriptions.create({
     file,
     model: model || 'whisper-1',
-    language: 'en',
     temperature: 0,
-    prompt: prompt || ''
+    prompt: fullPrompt
   });
   return (res.text || '').trim();
 }
@@ -91,7 +94,7 @@ async function transcribeGeminiWith(ai, wav, now = Date.now()) {
   const res = await ai.models.generateContent({
     model: CURRENT_GEMINI_DEFAULT,
     contents: [{ role: 'user', parts: [
-      { text: 'Transcribe this audio verbatim. Return only the spoken words with no commentary. If there is no clear speech, return an empty response.' },
+      { text: 'Transcribe this audio verbatim in its spoken language (Thai or English). Return only the spoken words with no commentary or translation. If there is no clear speech, return an empty response.' },
       audio
     ] }]
   });

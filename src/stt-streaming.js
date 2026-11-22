@@ -16,13 +16,32 @@ const { GEMINI_TRANSCRIBE_LIVE_MODEL } = require('./llm');
 
 const MIN_COMMIT_BYTES_24K = Math.floor(24000 * 2 * 0.12); // >=120ms PCM16 @ 24kHz before commit
 const MAX_UNCOMMITTED_BYTES_24K = 24000 * 2 * 12; // auto-commit continuous speech every 12s
+const DEFAULT_STT_LANGUAGES = ['th', 'en'];
+const DEFAULT_STT_PROMPT =
+  'Technical interview audio spoken in Thai or English (including Thai sentences mixed with English technical terms). Transcribe the exact spoken Thai or English words verbatim without translating.';
+
+function sanitizeRealtimeKeywords(rawKeywords) {
+  if (!Array.isArray(rawKeywords)) return [];
+  const out = [];
+  for (const item of rawKeywords) {
+    if (typeof item !== 'string') continue;
+    const cleaned = item.replace(/[<>\r\n]+/g, '').trim();
+    if (cleaned.length >= 2 && cleaned.length <= 64) {
+      out.push(cleaned);
+      if (out.length >= 40) break;
+    }
+  }
+  return out;
+}
 
 class OpenAIRealtimeSTT {
   constructor(apiKey, options = {}) {
     this.apiKey = apiKey;
     this.model = options.model || 'gpt-live-transcribe';
     this._delay = options.delay || 'low';
-    this._languages = Array.isArray(options.languages) ? options.languages : null;
+    this._languages = Array.isArray(options.languages) ? options.languages : DEFAULT_STT_LANGUAGES;
+    this._prompt = typeof options.prompt === 'string' ? options.prompt : DEFAULT_STT_PROMPT;
+    this._keywords = sanitizeRealtimeKeywords(options.keywords);
     this._WebSocketImpl = options.WebSocketImpl || null;
     this.ws = null;
     this.connected = false;
@@ -71,8 +90,14 @@ class OpenAIRealtimeSTT {
           model: this.model,
           delay: this._delay
         };
+        if (this._prompt) {
+          transcription.prompt = this._prompt;
+        }
         if (this._languages && this._languages.length > 0) {
           transcription.languages = this._languages;
+        }
+        if (this._keywords.length > 0) {
+          transcription.keywords = this._keywords;
         }
 
         // Configure the GA Realtime transcription session (gpt-live-transcribe uses turn_detection: null + explicit commit)
@@ -644,7 +669,7 @@ async function transcribeBatchOpenAI(apiKey, wav, model) {
     file,
     model: model || 'whisper-1',
     response_format: 'text',
-    language: 'en'
+    prompt: DEFAULT_STT_PROMPT
   });
   return (typeof res === 'string' ? res : res.text || '').trim();
 }
@@ -681,8 +706,12 @@ function createStreamingSTT(settings, channel, callbacks) {
 
   // Priority 2: OpenAI Realtime API (gpt-live-transcribe low-latency streaming)
   if ((selectedProvider === 'auto' || selectedProvider === 'openai') && keys.openai) {
+    const keywords = buildVocabPrompt(settings).split(',').map((t) => t.trim()).filter(Boolean);
     const stt = new OpenAIRealtimeSTT(keys.openai, {
       model: 'gpt-live-transcribe',
+      languages: DEFAULT_STT_LANGUAGES,
+      prompt: DEFAULT_STT_PROMPT,
+      keywords,
       onTranscript: (text) => onTranscript(channel, text),
       onInterim: (text) => onInterim(channel, text),
       onError,
