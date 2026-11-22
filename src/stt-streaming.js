@@ -748,11 +748,104 @@ function createStreamingSTT(settings, channel, callbacks) {
   };
 }
 
+function createInterviewerHoldController({
+  isCapturing,
+  ensureCapturing,
+  stopCapturing,
+  commitChannel,
+  flushChannel,
+  onHoldStateChange,
+  drainMs = 2200
+}) {
+  let active = false;
+  let captureStartedByHold = false;
+  let drainTimer = null;
+
+  function clearDrain() {
+    if (drainTimer) {
+      clearTimeout(drainTimer);
+      drainTimer = null;
+    }
+  }
+
+  async function finalizeTemporaryCapture() {
+    clearDrain();
+    if (!captureStartedByHold || active) return;
+    captureStartedByHold = false;
+    await stopCapturing();
+  }
+
+  return {
+    isActive() {
+      return active;
+    },
+    resolveMicChannel() {
+      return active ? 'them' : 'you';
+    },
+    async setHold(targetActive) {
+      const next = Boolean(targetActive);
+      if (next === active) return active;
+
+      if (next) {
+        const hadPendingDrain = Boolean(drainTimer);
+        clearDrain();
+        const wasAlreadyCapturing = Boolean(isCapturing());
+        if (!wasAlreadyCapturing) {
+          const started = await ensureCapturing();
+          if (!started) {
+            captureStartedByHold = false;
+            onHoldStateChange(false);
+            return false;
+          }
+          captureStartedByHold = true;
+        } else {
+          if (!hadPendingDrain) captureStartedByHold = false;
+          commitChannel('you');
+          flushChannel('you');
+        }
+        active = true;
+        onHoldStateChange(true);
+        return true;
+      }
+
+      active = false;
+      onHoldStateChange(false);
+      commitChannel('them');
+      flushChannel('them');
+      if (captureStartedByHold) {
+        clearDrain();
+        drainTimer = setTimeout(() => {
+          finalizeTemporaryCapture().catch(() => {});
+        }, drainMs);
+        if (drainTimer && typeof drainTimer.unref === 'function') drainTimer.unref();
+      }
+      return false;
+    },
+    async toggle() {
+      return this.setHold(!active);
+    },
+    onThemTurnSettled() {
+      if (!active && captureStartedByHold && drainTimer) {
+        finalizeTemporaryCapture().catch(() => {});
+      }
+    },
+    reset() {
+      clearDrain();
+      captureStartedByHold = false;
+      if (active) {
+        active = false;
+        onHoldStateChange(false);
+      }
+    }
+  };
+}
+
 module.exports = {
   OpenAIRealtimeSTT,
   DeepgramStreamingSTT,
   GeminiLiveSTT,
   createStreamingSTT,
+  createInterviewerHoldController,
   transcribeBatchOpenAI,
   transcribeBatchGemini
 };

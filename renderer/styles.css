@@ -279,13 +279,13 @@ button:focus { outline: none; }
 
 /* ============================ Action row ============================ */
 #action-row {
-  display: flex; align-items: center; flex-wrap: nowrap; gap: 4px;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 6px;
   margin-top: 6px; white-space: nowrap; flex-shrink: 0;
 }
 .act {
-  display: inline-flex; align-items: center; gap: 6px;
+  display: inline-flex; align-items: center; gap: 5px;
   border: none; background: transparent; cursor: pointer;
-  color: var(--tx-2); font-size: 14px; font-weight: 500; font-family: var(--font);
+  color: var(--tx-2); font-size: 12.5px; font-weight: 500; font-family: var(--font);
   padding: 5px 7px; border-radius: 8px;
   transition: background 140ms ease, color 140ms ease;
 }
@@ -293,17 +293,35 @@ button:focus { outline: none; }
 .act:hover { color: #fff; background: rgba(255,255,255,0.06); }
 .act:active { transform: translateY(0.5px); }
 .act:disabled { opacity: 0.5; cursor: default; }
-.sep { color: rgba(255,255,255,0.35); font-size: 14px; margin: 0 2px; }
+.sep { color: rgba(255,255,255,0.32); font-size: 12px; margin: 0 1px; }
+
+.hold-them-btn {
+  display: inline-flex; align-items: center; gap: 5px;
+  border: 1px solid rgba(255,255,255,0.14);
+  background: rgba(255,255,255,0.04);
+  color: var(--tx-2); font-size: 12.5px; font-weight: 500; font-family: var(--font);
+  padding: 5px 8px; border-radius: 8px; cursor: pointer; user-select: none;
+  transition: background 140ms ease, border-color 140ms ease, color 140ms ease, box-shadow 140ms ease;
+}
+.hold-them-btn .ic { display: inline-flex; color: var(--ic); }
+.hold-them-btn:hover { color: #fff; background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.22); }
+.hold-them-btn.active {
+  background: rgba(245, 158, 11, 0.20);
+  border-color: rgba(251, 191, 36, 0.65);
+  color: #fde68a;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.18);
+}
+.hold-them-btn.active .ic { color: #fbbf24; }
 .act-primary {
-  font-size: 15px; font-weight: 600; padding: 6px 12px;
+  font-size: 13.5px; font-weight: 600; padding: 5px 10px;
   background: rgba(60,131,245,0.14); border: 1px solid rgba(60,131,245,0.30);
-  color: #a8c8ff; border-radius: 10px;
+  color: #a8c8ff; border-radius: 9px;
 }
 .act-primary:hover { background: rgba(60,131,245,0.22); color: #fff; }
-.act-secondary { font-size: 13px; font-weight: 500; padding: 5px 9px;
+.act-secondary { font-size: 12.5px; font-weight: 500; padding: 5px 8px;
   border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; }
 .act-secondary:hover { background: rgba(255,255,255,0.07); }
-.shortcut-hint { font-size: 10.5px; font-weight: 500; color: var(--tx-mut); margin-left: 4px; }
+.shortcut-hint { font-size: 10px; font-weight: 500; color: var(--tx-mut); margin-left: 2px; }
 
 /* FIX #4: Visual indication that listening is active in input box */
 #composer.listening {

@@ -12,7 +12,7 @@ const { giveUpTimer } = require('./src/give-up');
 const { checkOwnKey } = require('./src/own-key-check');
 const { MODES } = require('./src/prompts');
 const { rms16 } = require('./src/wav');
-const { createStreamingSTT } = require('./src/stt-streaming');
+const { createStreamingSTT, createInterviewerHoldController } = require('./src/stt-streaming');
 const { AdaptiveVAD, AudioRingBuffer } = require('./src/vad');
 const { buildInterviewContext, detectCategory } = require('./src/interview-context');
 const { createProfileStore } = require('./src/profile-store');
@@ -83,7 +83,7 @@ let win = null;
 // false when another application already owns the combination, and nothing used
 // to look at that — so the only symptom was a key that did nothing. Iris reads
 // this and can say which key is taken instead of guessing from a screenshot.
-const shortcutState = { assist: false, say: false, leetcode: false, quit: false };
+const shortcutState = { assist: false, say: false, leetcode: false, holdThem: false, quit: false };
 const isMac = process.platform === 'darwin';
 const isWindows = process.platform === 'win32';
 const isLinux = process.platform === 'linux';
@@ -203,10 +203,34 @@ const ringBuffers = {
   them: new AudioRingBuffer(300, 16000)
 };
 
+const interviewerHold = createInterviewerHoldController({
+  isCapturing: () => state.capturing,
+  ensureCapturing: () => {
+    desiredCaptureState = true;
+    captureTransition = captureTransition
+      .catch(() => state.capturing)
+      .then(() => setCapturing(true));
+    return captureTransition;
+  },
+  stopCapturing: () => {
+    desiredCaptureState = false;
+    captureTransition = captureTransition
+      .catch(() => state.capturing)
+      .then(() => setCapturing(false));
+    return captureTransition;
+  },
+  commitChannel: (ch) => commitStreamingChannel(ch),
+  flushChannel: (ch) => { flushChannel(ch).catch(() => {}); },
+  onHoldStateChange: (active) => send('capture:interviewer-hold', { active })
+});
+
 function pushTranscript(turn) {
   transcript.push(turn);
   if (transcript.length > MAX_TRANSCRIPT_TURNS) transcript.splice(0, transcript.length - MAX_TRANSCRIPT_TURNS);
   if (meetingMemory) meetingMemory.onTurn(turn);
+  if (turn && turn.channel === 'them') {
+    interviewerHold.onThemTurnSettled();
+  }
   try {
     const ws = getWorkspaceStore().getActiveWorkspace();
     if (ws && ws.activeRoundId) {
@@ -837,6 +861,7 @@ async function setCapturing(active) {
   }
 
   state.capturing = false;
+  interviewerHold.reset();
   stopFlushLoop();
   stopStreamingSTT();
   const lastWords = Promise.all([sttInFlight.you, sttInFlight.them]).catch(() => {});
@@ -1157,7 +1182,9 @@ ipcMain.handle('capture:toggle', () => {
     .then(() => setCapturing(targetState));
   return captureTransition;
 });
-ipcMain.handle('capture:state', () => ({ active: state.capturing }));
+ipcMain.handle('capture:state', () => ({ active: state.capturing, interviewerHold: interviewerHold.isActive() }));
+ipcMain.handle('capture:interviewer-hold-set', (_e, active) => interviewerHold.setHold(Boolean(active)));
+ipcMain.handle('capture:interviewer-hold-toggle', () => interviewerHold.toggle());
 ipcMain.handle('whisper:models', () => getWhisperOverview());
 ipcMain.handle('whisper:model-download', async (_event, modelId) => {
   if (!whisperModelManager) throw new Error('The local Whisper model manager is not ready.');
@@ -1232,7 +1259,9 @@ ipcMain.on('llm:cancel', () => {
     activeFeatureAbort = null;
   }
 });
-ipcMain.on('mic:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('you', arrayBuffer); });
+ipcMain.on('mic:pcm', (_e, arrayBuffer) => {
+  if (state.capturing) routeAudio(interviewerHold.resolveMicChannel(), arrayBuffer);
+});
 ipcMain.on('system:pcm', (_e, arrayBuffer) => { if (state.capturing) routeAudio('them', arrayBuffer); });
 ipcMain.on('mouse:ignore', (_e, v) => { if (win) win.setIgnoreMouseEvents(!!v, { forward: true }); });
 // Window dragging is done here rather than with CSS drag regions, which misbehave while the
@@ -1516,6 +1545,9 @@ function registerShortcuts() {
   shortcutState.say = globalShortcut.register('CommandOrControl+Return', () => runFeature('say', ''));
   shortcutState.assist = globalShortcut.register('CommandOrControl+Shift+Return', () => runFeature('assist', ''));
   shortcutState.leetcode = globalShortcut.register('CommandOrControl+H', () => runFeature('leetcode', ''));
+  shortcutState.holdThem = globalShortcut.register('CommandOrControl+Shift+L', () => {
+    interviewerHold.toggle().catch(() => {});
+  });
   shortcutState.hide = globalShortcut.register('CommandOrControl+Shift+/', () => send('hide:toggle', {}));
   shortcutState.quit = globalShortcut.register('CommandOrControl+Shift+X', () => app.quit());
   for (const [name, wasRegistered] of Object.entries(shortcutState)) {

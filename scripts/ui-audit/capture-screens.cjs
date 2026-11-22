@@ -166,6 +166,7 @@ async function inspectDomMetrics(contents, label) {
       toolbar: checkBox('#toolbar', '#toolbar'),
       panel: checkBox('#panel', '#panel'),
       workspaceBar: checkBox('#workspace-bar', '#workspace-bar'),
+      actionRow: checkBox('#action-row', '#action-row'),
       workspacePopover: checkBox('#workspace-popover', '#workspace-popover'),
       composer: checkBox('#composer', '#composer'),
       settings: checkBox('#settings', '#settings'),
@@ -200,6 +201,25 @@ app.on('browser-window-created', (_event, win) => {
       await win.webContents.executeJavaScript(`document.querySelector('#ob-skip').click()`);
       await sleep(200);
       await capture(win, '02-main-overlay', report);
+
+      // 2b. Hold: Them active state
+      await win.webContents.executeJavaScript(`(() => {
+        const b = document.querySelector('#hold-them-btn');
+        if (b) {
+          b.classList.add('active');
+          const lbl = b.querySelector('.hold-them-label');
+          if (lbl) lbl.textContent = 'Rec: Them';
+        }
+      })()`);
+      await capture(win, '02b-hold-them-active', report);
+      await win.webContents.executeJavaScript(`(() => {
+        const b = document.querySelector('#hold-them-btn');
+        if (b) {
+          b.classList.remove('active');
+          const lbl = b.querySelector('.hold-them-label');
+          if (lbl) lbl.textContent = 'Hold: Them';
+        }
+      })()`);
 
       // 3. Long response + tool status + sidebar open (stress vertical height!)
       await win.webContents.executeJavaScript(`(() => {

@@ -18,6 +18,8 @@ contextBridge.exposeInMainWorld('cue', {
     return false;
   }),
   captureState: () => ipcRenderer.invoke('capture:state'),
+  interviewerHoldSet: (active) => ipcRenderer.invoke('capture:interviewer-hold-set', Boolean(active)).catch(() => false),
+  interviewerHoldToggle: () => ipcRenderer.invoke('capture:interviewer-hold-toggle').catch(() => false),
   micPcm: (arrayBuffer) => ipcRenderer.send('mic:pcm', arrayBuffer),
   systemPcm: (arrayBuffer) => ipcRenderer.send('system:pcm', arrayBuffer),
   setIgnoreMouse: (v) => ipcRenderer.send('mouse:ignore', v),
@@ -58,6 +60,7 @@ contextBridge.exposeInMainWorld('cue', {
   on: (channel, cb) => {
     const allowed = [
       'capture:state',
+      'capture:interviewer-hold',
       'llm:start',
       'llm:thinking',
       'llm:tool',

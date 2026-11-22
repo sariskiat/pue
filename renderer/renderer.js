@@ -20,6 +20,8 @@
   document.querySelector('.act[data-mode="assist"] .ic').innerHTML = icon('monitor', { size: 16 });
   document.querySelector('.act[data-mode="say"] .ic').innerHTML = icon('wand-sparkles', { size: 16 });
   document.querySelector('.act[data-mode="recap"] .ic').innerHTML = icon('refresh-cw', { size: 16 });
+  const holdThemIc = document.querySelector('#hold-them-btn .ic');
+  if (holdThemIc) holdThemIc.innerHTML = icon('mic', { size: 14 });
   $('#smart-toggle .ic').innerHTML = icon('zap', { size: 14 });
   $('#more-btn').innerHTML = icon('more-horizontal', { size: 18 });
   $('#send-btn').innerHTML = icon('play', { size: 15 });
@@ -245,7 +247,66 @@
   }
 
   document.querySelectorAll('.act').forEach((btn) => {
-    btn.addEventListener('click', () => runMode(btn.dataset.mode, ''));
+    btn.addEventListener('click', () => {
+      if (btn.dataset.mode) runMode(btn.dataset.mode, '');
+    });
+  });
+
+  // ---- Hold: Them (Interviewer / Hiring Manager asking) -------------------
+  const holdThemBtn = $('#hold-them-btn');
+  let holdPointerActive = false;
+  let holdKeyActive = false;
+
+  function renderHoldThemState(active) {
+    if (!holdThemBtn) return;
+    holdThemBtn.classList.toggle('active', Boolean(active));
+    const labelEl = holdThemBtn.querySelector('.hold-them-label');
+    if (labelEl) {
+      labelEl.textContent = active ? 'Rec: Them' : 'Hold: Them';
+    }
+  }
+
+  if (holdThemBtn) {
+    holdThemBtn.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      holdPointerActive = true;
+      try { holdThemBtn.setPointerCapture(e.pointerId); } catch (_) {}
+      void cue.interviewerHoldSet(true);
+    });
+    const endPointerHold = (e) => {
+      if (!holdPointerActive) return;
+      holdPointerActive = false;
+      try { if (e && e.pointerId !== undefined) holdThemBtn.releasePointerCapture(e.pointerId); } catch (_) {}
+      void cue.interviewerHoldSet(false);
+    };
+    holdThemBtn.addEventListener('pointerup', endPointerHold);
+    holdThemBtn.addEventListener('pointercancel', endPointerHold);
+    holdThemBtn.addEventListener('lostpointercapture', endPointerHold);
+  }
+
+  window.addEventListener('keydown', (e) => {
+    if (e.altKey && e.code === 'Space' && !e.repeat) {
+      e.preventDefault();
+      holdKeyActive = true;
+      void cue.interviewerHoldSet(true);
+    }
+  });
+  window.addEventListener('keyup', (e) => {
+    if (holdKeyActive && (e.code === 'Space' || e.key === 'Alt')) {
+      holdKeyActive = false;
+      void cue.interviewerHoldSet(false);
+    }
+  });
+  window.addEventListener('blur', () => {
+    if (holdPointerActive || holdKeyActive) {
+      holdPointerActive = false;
+      holdKeyActive = false;
+      void cue.interviewerHoldSet(false);
+    }
+  });
+  cue.on('capture:interviewer-hold', ({ active }) => {
+    renderHoldThemState(Boolean(active));
   });
 
   const input = $('#input');
@@ -271,8 +332,9 @@
     // Must be substantial (not just filler words)
     if (trimmed.length < 12) return false;
     
-    // High confidence: ends with question mark
+    // High confidence: ends with question mark or Thai question/request markers
     if (/\?$/.test(trimmed)) return true;
+    if (/ไหม|มั้ย|ยังไง|อย่างไร|ทำไม|อะไร|เล่าให้ฟัง|อธิบาย/.test(trimmed)) return true;
     
     // High confidence: behavioral interview patterns (these are complete even without ?)
     const behavioralPatterns = [
@@ -2711,8 +2773,13 @@
     // R4: shortcut hints
     const sayHintEl = document.getElementById('say-shortcut-hint');
     const assistHintEl = document.getElementById('assist-shortcut-hint');
+    const holdThemHintEl = document.getElementById('hold-them-shortcut-hint');
     if (sayHintEl) sayHintEl.textContent = isWindows ? 'Ctrl+↵' : '⌘↵';
     if (assistHintEl) assistHintEl.textContent = isWindows ? 'Ctrl+Shift+↵' : '⌘⇧↵';
+    if (holdThemHintEl) holdThemHintEl.textContent = isWindows ? 'Ctrl+Shift+L' : '⌘⇧L';
+    if (holdThemBtn) holdThemBtn.title = isWindows
+      ? 'Hold while interviewer asks (Alt+Space), or press Ctrl+Shift+L to start/stop'
+      : 'Hold while interviewer asks (⌥Space), or press ⌘⇧L to start/stop';
     const sayBtn = document.querySelector('.act[data-mode="say"]');
     const assistBtn = document.querySelector('.act[data-mode="assist"]');
     if (sayBtn) sayBtn.title = isWindows
