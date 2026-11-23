@@ -1543,7 +1543,7 @@ ipcMain.handle('workspace:generate-brief', async (_e, wsId) => {
   const raw = await llm.stream({
     system,
     turns: [{ role: 'user', text: user }],
-    maxTokens: 1200,
+    maxTokens: 4096,
     onToken: () => {}
   });
   const brief = parsePrepBrief(raw, priorRoundFocus);

@@ -68,7 +68,7 @@ function buildPrepBriefPrompt({ workspace = {}, profile = {} }) {
       'Repo Matches:',
       'Test Plan:',
       'Likely Questions:',
-      'Under Repo Matches, format each bullet as: - <repoName> | <whyRelevant> | <talkingPoints>',
+      'Under Repo Matches, select the 4 to 6 strongest matching repositories and format each bullet as: - <repoName> | <whyRelevant> | <talkingPoints>',
       'Use a hyphen at the start of every bullet under Repo Matches, Test Plan, and Likely Questions.'
     ].join('\n')
   ].filter(Boolean);
@@ -94,9 +94,11 @@ function stripBullet(line) {
     .trim();
 }
 
+const CUT_NOTE_RE = /^\((?:cut off|incomplete)\s*:/i;
+
 function parseRepoMatchLine(rawLine) {
   const clean = stripBullet(rawLine);
-  if (!clean) return null;
+  if (!clean || CUT_NOTE_RE.test(clean)) return null;
   const parts = clean.split('|').map((s) => s.trim());
   if (parts.length >= 3) {
     return {
@@ -110,13 +112,31 @@ function parseRepoMatchLine(rawLine) {
   }
   const colonIdx = clean.indexOf(':');
   if (colonIdx > 0 && colonIdx < 40) {
+    const repoName = clean.slice(0, colonIdx).trim();
+    const whyRelevant = clean.slice(colonIdx + 1).trim();
+    if (!whyRelevant) return null;
     return {
-      repoName: clean.slice(0, colonIdx).trim(),
-      whyRelevant: clean.slice(colonIdx + 1).trim(),
+      repoName,
+      whyRelevant,
       talkingPoints: ''
     };
   }
+  if (/[-:|]$/.test(clean)) return null;
   return { repoName: clean, whyRelevant: '', talkingPoints: '' };
+}
+
+function formatSummaryLines(lines) {
+  const out = [];
+  for (const line of lines) {
+    if (/^[-*•]\s+/.test(line) || /^[0-9]+[.)]\s+/.test(line)) {
+      out.push('• ' + stripBullet(line));
+    } else if (out.length && !out[out.length - 1].startsWith('• ')) {
+      out[out.length - 1] += ' ' + line;
+    } else {
+      out.push(line);
+    }
+  }
+  return out.join('\n').trim();
 }
 
 function parsePrepBrief(text, priorRoundFocus = []) {
@@ -126,7 +146,8 @@ function parsePrepBrief(text, priorRoundFocus = []) {
     repoMatches: [],
     testPlan: [],
     likelyQuestions: [],
-    priorRoundFocus: Array.isArray(priorRoundFocus) ? priorRoundFocus.slice() : []
+    priorRoundFocus: Array.isArray(priorRoundFocus) ? priorRoundFocus.slice() : [],
+    truncated: false
   };
   if (!text || !String(text).trim()) return out;
 
@@ -135,25 +156,30 @@ function parsePrepBrief(text, priorRoundFocus = []) {
 
   for (const rawLine of String(text).split(/\r?\n/)) {
     const line = rawLine.trim();
+    if (!line) continue;
+    if (CUT_NOTE_RE.test(stripBullet(line))) {
+      out.truncated = true;
+      continue;
+    }
     const header = BRIEF_HEADERS.find(([, re]) => re.test(line));
     if (header) {
       cur = header[0];
       continue;
     }
-    if (!cur || !line) continue;
+    if (!cur) continue;
     buckets[cur].push(line);
   }
 
   const matchedAny = Object.values(buckets).some((arr) => arr.length > 0);
   if (!matchedAny) {
-    out.summary = String(text).trim();
+    out.summary = String(text).replace(/\n*\((?:Cut off|Incomplete):[^\n]*\)\s*$/i, '').trim();
     return out;
   }
 
-  out.summary = buckets.summary.map(stripBullet).join(' ').trim();
+  out.summary = formatSummaryLines(buckets.summary);
   out.repoMatches = buckets.repoMatches.map(parseRepoMatchLine).filter(Boolean);
-  out.testPlan = buckets.testPlan.map(stripBullet).filter(Boolean);
-  out.likelyQuestions = buckets.likelyQuestions.map(stripBullet).filter(Boolean);
+  out.testPlan = buckets.testPlan.map(stripBullet).filter((l) => l && !CUT_NOTE_RE.test(l));
+  out.likelyQuestions = buckets.likelyQuestions.map(stripBullet).filter((l) => l && !CUT_NOTE_RE.test(l));
   return out;
 }
 

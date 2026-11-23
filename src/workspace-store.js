@@ -777,7 +777,7 @@ function createWorkspaceStore(resolveUserDataDir, opts = {}) {
     const rawText = await llm.stream({
       system,
       turns: [{ role: 'user', text: user }],
-      maxTokens: 1200,
+      maxTokens: 4096,
       lengthCut: 'ellipsis',
       onToken: () => {}
     });
